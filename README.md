@@ -8,14 +8,14 @@ Based on Matlab code by Minmin Chen. For original Papers and Code, see http://ww
 Example usage with dimensional reduction on text:
 
 <pre><code>
-from linear_msda import mSDA
+from linear_msda import mSDAhd
 
 # stuff you need to do yourself:
 # - load your corpus, should be bag of words format (as in e.g. gensim)
 # - select the top k most frequent terms (or whatever you want your prototype terms to be based on)
 
 # initialize mSDA / dCoT
-msda = mSDAhd(top_k_terms, len(dictionary), noise=0.5, num_layers=5)
+msda = mSDAhd(top_k_terms, input_dimensionality=len(dictionary), noise=0.5, num_layers=5)
 
 # train on our corpus, generating the hidden representations
 representations = msda.train(preprocessed_bow_documents, return_hidden=True)
