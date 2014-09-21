@@ -7,7 +7,7 @@ Based on Matlab code by Minmin Chen. For original Papers and Code, see http://ww
 
 Example usage with dimensional reduction on text:
 
-<code>
+<pre><code>
 from linear_msda import mSDA
 
 # stuff you need to do yourself:
@@ -27,6 +27,6 @@ similarity = cosine_similarity(representations[0], representations[1])
 mytext = "............."
 bow = preprocess(mytext) # generate bow, remove stopwords, etc.
 representation = msda.get_hidden_representations([bow])
-</code>
+</code></pre>
 
 The code is still in it's early stages and probably has a good amount of bugs at this point.
