@@ -49,7 +49,6 @@ class mDA(object):
         reg = self.lambda_ * np.eye(dimensionality+1)
         reg[-1, -1] = 0
 
-        #TODO: figure this out
         # we need to solve W = P * Q^-1
         # Q is symmetric, so Q = Q^T
         # WQ = P
@@ -58,13 +57,22 @@ class mDA(object):
         # Q W^T = P^T
 
         self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
+
+        del P
+        del Q
+        del scatter
+        del bias
+        del corruption
         
         if return_hidden:
             hidden_representations = np.dot(self.weights, biased)
             if not self.highdimen:
                 hidden_representations = np.tanh(hidden_representations)
-
+            del biased
             return hidden_representations
+
+        del biased
+
 
     def get_hidden_representations(self, input_data):
         dimensionality, num_documents = input_data.shape
@@ -78,6 +86,9 @@ class mDA(object):
         hidden_representations = np.dot(self.weights, biased)
         if not self.highdimen:
             hidden_representations = np.tanh(hidden_representations)
+
+        del biased
+        del bias
 
         return hidden_representations
 

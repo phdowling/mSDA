@@ -68,11 +68,12 @@ class mSDAhd(object):
         if acc:
             acc = np.concatenate(acc, axis=1)
             representations = self._msda.train(acc, return_hidden=True, reduced_representations=acc[self.prototype_ids, :])
-            if return_hidden:
-                    for row in np.concatenate([rep.T for rep in representations], axis=1):
-                        results.append(row)
+            del acc
 
-        return results
+            if return_hidden:
+                for row in np.concatenate([rep.T for rep in representations], axis=1):
+                    results.append(row)
+                return results
 
     def get_hidden_representations(self, input_data):
         acc = np.concatenate([convert(document, self.input_dimensionality) for document in input_data], axis=1)
@@ -140,8 +141,9 @@ class _mSDA(object):
 
                 hidden = mda.train(input_data[indices, :], return_hidden=True,
                                    reduced_representations=reduced_representations)
-                
                 current_representation += hidden
+                del hidden
+
             current_representation /= len(range(dimensionality/self.reduced_dim))
             current_representation = np.tanh(current_representation)
         else:
@@ -151,7 +153,8 @@ class _mSDA(object):
         ln.debug("Now training %s layers." % (len(self.layers),))
         for idx, layer in enumerate(self.layers):
             current_representation = layer.train(current_representation, return_hidden=True)
-            representations.append(current_representation)
+            if return_hidden:
+                representations.append(current_representation)
             ln.debug("trained layer %s" % (idx+1,))
 
         if return_hidden:
