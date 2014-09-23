@@ -44,7 +44,7 @@ class Reuters21578DataSource():
         with open(filename, "r") as f:
             data = f.read()
             soup = BeautifulSoup(data)
-            contents = soup.find_all("content")
+            contents = soup.find_all("body")
             for cont in contents:
                 count += 1
                 d = Document(cont.text)
