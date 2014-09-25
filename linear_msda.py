@@ -21,7 +21,7 @@ def convert_to_sparse_matrix(input_data, dimensionality):
         if docidx % 5000 == 0:
             ln.debug("on document %s.." % (docidx,))
         for word_id, count in document:
-            sparse[docidx, word_id] = count
+            sparse[word_id, docidx] = count
     return sparse.tocsc()
 
 class mSDA(object):
