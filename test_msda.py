@@ -14,7 +14,7 @@ import string
 
 import gensim
 
-from linear_msda import mSDAhd
+from linear_msda import mSDA, mSDAhd
 
 import os
 
@@ -25,8 +25,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 class Reuters21578DataSource():
     def __init__(self):
         self.reutersFiles = []
-        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(10)] + \
-                         ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
+        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(10)] + ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
         self.updateCount = 0
         self.updating = False
 
@@ -131,7 +130,7 @@ data = Reuters21578DataSource()
 preprocessor = TokenizingPorter2Stemmer()
 dictionary = gensim.corpora.dictionary.Dictionary()
 all_preprocessed = []
-for _ in range(20):
+for _ in range(30):
     docs = [preprocessor.preprocess(doc, dictionary) for doc in data.updateAndGetDocuments()]
     all_preprocessed += docs
 
@@ -149,7 +148,9 @@ top_k = [k for k, v in most_frequent_ids[:k]]
 #print [inv_map[k] for k in top_k]
 
 ln.debug("train mSDA")
-msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
+#msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
+msda = mSDA(noise=0.5, num_layers=5, input_dimensionality=len(dictionary))
+
 representations = msda.train(all_preprocessed, return_hidden=True)
 
 

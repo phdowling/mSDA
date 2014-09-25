@@ -18,14 +18,34 @@ class mSDA(object):
     """
     (Linear) marginalized Stacked Denoising Autoencoder. 
     """
-    def __init__(self, noise, num_layers):
+    def __init__(self, noise, num_layers, input_dimensionality):
         self._msda = _mSDA(noise, num_layers, highdimen=False)
+        self.input_dimensionality = input_dimensionality
 
     def train(self, input_data, return_hidden=False):
         """
         input_data must be a numpy array, where each row represents one training documents/image/etc.
         """
-        return self._msda.train(input_data, return_hidden)
+        ln.debug("got %s input documents." % (len(input_data)))
+
+        acc = []
+        results = []
+
+        for idx, document in enumerate(input_data):
+            acc.append(convert(document, self.input_dimensionality))
+        acc = np.concatenate(acc, axis=1)
+
+        representations = self._msda.train(acc, return_hidden=return_hidden)
+        if return_hidden:
+            for row in np.concatenate([rep.T for rep in representations], axis=1):
+                results.append(row)
+        del acc
+        del representations
+
+        ln.debug("Training done.")
+
+        if return_hidden:
+            return results
 
     def get_hidden_representations(self, input_data):
         return self._msda.get_hidden_representations(input_data)
@@ -44,8 +64,9 @@ class mSDAhd(object):
 
     def train(self, input_data, return_hidden=False, streamed=False, batch_size=3000):
         #reduced_representations
+        num_docs = len(input_data)
         if not streamed:
-            batch_size = len(input_data)
+            batch_size = num_docs
 
         ln.debug("got %s input documents, batch size is %s" % (len(input_data), batch_size))
 
@@ -56,24 +77,21 @@ class mSDAhd(object):
         for idx, document in enumerate(input_data):
             acc.append(convert(document, self.input_dimensionality))
 
-            if idx % batch_size == 0 and idx != 0:
+            if (idx % batch_size == 0 and idx != 0) or idx == num_docs:
                 batches += 1
                 acc = np.concatenate(acc, axis=1)
-                representations = self._msda.train(acc, return_hidden=True, reduced_representations=acc[self.prototype_ids, :])
+                representations = self._msda.train(acc, return_hidden=return_hidden, reduced_representations=acc[self.prototype_ids, :])
                 if return_hidden:
                     for row in np.concatenate([rep.T for rep in representations], axis=1):
                         results.append(row)
                 acc = []
                 ln.debug("trained on %s documents, (meta-)batch number %s.." % (idx, batches))
         if acc:
-            acc = np.concatenate(acc, axis=1)
-            representations = self._msda.train(acc, return_hidden=True, reduced_representations=acc[self.prototype_ids, :])
-            del acc
+            ln.error("This shouldn't happen, there's still something in the accumulator!")
+        del acc
 
-            if return_hidden:
-                for row in np.concatenate([rep.T for rep in representations], axis=1):
-                    results.append(row)
-                return results
+        if return_hidden:
+            return results
 
     def get_hidden_representations(self, input_data):
         acc = np.concatenate([convert(document, self.input_dimensionality) for document in input_data], axis=1)
