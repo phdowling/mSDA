@@ -75,7 +75,7 @@ class mDA(object):
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
 
         ln.debug("Constructing reg")
-        reg = csc_matrix.eye(dimensionality+1).multiply(self.lambda_)
+        reg = sparse.eye(dimensionality+1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
 
         # we need to solve W = P * Q^-1
