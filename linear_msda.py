@@ -4,7 +4,7 @@ ln = logging.getLogger("mSDA")
 ln.setLevel(logging.DEBUG)
 from linear_mda import mDA
 
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, lil_matrix
 
 from collections import defaultdict
 
@@ -16,11 +16,13 @@ def convert(sparse_bow, dimensionality):
     return csc_matrix(dense)
 
 def convert_to_sparse_matrix(input_data, dimensionality):
-    sparse = csc_matrix((dimensionality, len(input_data)))
+    sparse = lil_matrix((dimensionality, len(input_data)))
     for idx, document in enumerate(input_data):
+        if idx % 500 == 0:
+            ln.debug("on document %s.." % (idx,))
         for word_id, count in document:
             sparse[word_id, idx] = count
-    return sparse
+    return sparse.tocsc()
 
 class mSDA(object):
     """
