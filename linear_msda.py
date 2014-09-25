@@ -26,7 +26,7 @@ class mSDA(object):
         """
         input_data must be a numpy array, where each row represents one training documents/image/etc.
         """
-        ln.debug("got %s input documents." % (len(input_data)))
+        ln.debug("got %s input documents. Converting data to Numpy matrix format.." % (len(input_data)))
 
         acc = []
         results = []
@@ -34,7 +34,7 @@ class mSDA(object):
         for idx, document in enumerate(input_data):
             acc.append(convert(document, self.input_dimensionality))
         acc = np.concatenate(acc, axis=1)
-
+        ln.debug("Beginning mSDA training.")
         representations = self._msda.train(acc, return_hidden=return_hidden)
         if return_hidden:
             for row in np.concatenate([rep.T for rep in representations], axis=1):

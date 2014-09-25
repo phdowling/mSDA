@@ -1,4 +1,7 @@
 import numpy as np
+import logging
+ln = logging.getLogger("mDA")
+ln.setLevel(logging.DEBUG)
 
 class mDA(object):
     def __init__(self, noise, lambda_, weights=None, highdimen=False):
@@ -18,23 +21,27 @@ class mDA(object):
             reduced_dim, num_docs2 = reduced_representations.shape
             assert num_docs2 == num_documents
 
+        ln.debug("mDA is beginning training.")
+
         bias = np.ones((1, num_documents))
         #biased = np.ones((dimensionality, num_documents+1))
         biased = np.concatenate((input_data, bias))
         #biased[:, :-1] = input_data
         biased = np.matrix(biased)
 
+        ln.debug("Created bias matrix, now computing scatter matrix.")
         scatter = np.dot(biased, biased.T)
 
         corruption = np.dot(np.ones((dimensionality + 1, 1)), (1 - self.noise))
         corruption[-1] = 1
 
+        ln.debug("Applying corrution vector")
         Q = np.multiply(scatter, np.dot(corruption, corruption.T))
 
         # replace the diagonal of Q
         Q[range(dimensionality + 1), range(dimensionality + 1)] = (corruption.T * np.diag(scatter))[0]
 
-
+        ln.debug("Construction P")
         if self.highdimen:
             P = np.multiply(
                 np.dot(reduced_representations, biased.T),
@@ -55,9 +62,9 @@ class mDA(object):
         # (WQ)^T = P^T
         # Q^T W^T = P^T
         # Q W^T = P^T
-
+        ln.debug("Solving for weights matrix.")
         self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-
+        ln.debug("finished training.")
         del P
         del Q
         del scatter
