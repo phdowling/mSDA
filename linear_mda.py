@@ -86,7 +86,7 @@ class mDA(object):
         # Q W^T = P^T
         ln.debug("Solving for weights matrix")
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-        self.weights = sparse.linalg.lsqr((Q + reg), P.T)[0].T
+        self.weights = sparse.linalg.lsmr((Q + reg), P.T)[0].T
         ln.debug("finished training.")
         del P
         del Q
