@@ -34,7 +34,7 @@ class mDA(object):
         ln.debug("Created bias matrix, now computing scatter matrix")
         scatter = input_data.dot(input_data.T)
 
-        corruption = csc_matrix.ones((dimensionality + 1, 1)) * (1 - self.noise)
+        corruption = csc_matrix(np.ones(dimensionality + 1, 1)) * (1 - self.noise)
         corruption[-1] = 1
 
         ln.debug("Applying corrution vector")
