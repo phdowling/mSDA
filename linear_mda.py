@@ -44,13 +44,15 @@ class mDA(object):
 
         ln.debug("scatter: %s" % (scatter.__repr__()))
 
+        # TODO: make the slicing more efficient.
+
         ln.debug("...multiplying values up to (d,d)")
-        Q[:dimensionality, :dimensionality] = scatter[:dimensionality, :dimensionality] * (1-self.noise)**2
+        Q = scatter * (1-self.noise)**2
         ln.debug("...multiplying values in (d+1,:)")
-        Q[dimensionality] = scatter[dimensionality] * (1-self.noise)
+        Q[dimensionality] = scatter[dimensionality] * (1.0/(1-self.noise))
         ln.debug("...multiplying values in (:,d+1)")
-        Q[:, dimensionality] = scatter[:, dimensionality] * (1-self.noise)
-        Q[-1, -1] = scatter[-1, -1]
+        Q[:, dimensionality] = scatter[:, dimensionality] * (1.0/(1-self.noise))
+        Q[-1, -1] = scatter[-1, -1] * (1.0/(1-self.noise)**2)
 
         # replace the diagonal of Q
         ln.debug("Replacing Q's diagonal")
