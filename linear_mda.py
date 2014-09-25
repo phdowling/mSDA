@@ -71,9 +71,11 @@ class mDA(object):
             P = scatter.tocsr()[:-1, :].tocsc()
             #ln.debug("vstacking corruption")
             #corrupt = vstack(dimensionality * [corruption.T])
-            #ln.debug("corrupt: %s, P: %s" % (repr(corrupt), repr(P)))
+            ln.debug("P: %s, corruption: %s" % (repr(P), repr(corruption)))
             ln.debug("multiplying")
             for column in range(dimensionality):
+                if column % 50 == 0:
+                    ln.debug("up to column %s" % (column,))
                 P[:, column] = P[:, column].multiply(corruption.T)
 
         ln.debug("Constructing reg")
