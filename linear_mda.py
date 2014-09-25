@@ -3,7 +3,7 @@ import logging
 ln = logging.getLogger("mDA")
 ln.setLevel(logging.DEBUG)
 
-
+from scipy import sparse
 from scipy.sparse import vstack
 from scipy.sparse import csc_matrix
 
@@ -31,31 +31,33 @@ class mDA(object):
 
         input_data = vstack((input_data, bias))
 
-        ln.debug("Created bias matrix, now computing scatter matrix.")
-        scatter = input_data.dot(input_data.T).todense()
+        ln.debug("Created bias matrix, now computing scatter matrix")
+        scatter = input_data.dot(input_data.T)
 
-        corruption = np.dot(np.ones((dimensionality + 1, 1)), (1 - self.noise))
+        corruption = csc_matrix.ones((dimensionality + 1, 1)) * (1 - self.noise)
         corruption[-1] = 1
 
         ln.debug("Applying corrution vector")
-        Q = np.multiply(scatter, np.dot(corruption, corruption.T))
+        Q = scatter.multiply(corruption.dot(corruption.T))
 
         # replace the diagonal of Q
-        Q[range(dimensionality + 1), range(dimensionality + 1)] = (corruption.T * np.diag(scatter))[0]
+        idxs = range(dimensionality + 1)
+        Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
 
-        ln.debug("Construction P")
+        ln.debug("Constructing P")
         if self.highdimen:
+            #TODO: this will be broken for now
             P = np.multiply(
                 reduced_representations.dot(input_data.T).todense(),
                 np.tile(corruption.T, (reduced_dim, 1))
             )
         else:
-            P = np.multiply(
-                scatter[:-1, :],
-                np.tile(corruption.T, (dimensionality, 1))
+            P = scatter[:-1, :].multiply(
+                vstack(dimensionality * [corruption.T])
             )
 
-        reg = self.lambda_ * np.eye(dimensionality+1)
+        ln.debug("Constructing reg")
+        reg = csc_matrix.eye(dimensionality+1).multiply(self.lambda_)
         reg[-1, -1] = 0
 
         # we need to solve W = P * Q^-1
@@ -64,8 +66,9 @@ class mDA(object):
         # (WQ)^T = P^T
         # Q^T W^T = P^T
         # Q W^T = P^T
-        ln.debug("Solving for weights matrix.")
-        self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
+        ln.debug("Solving for weights matrix")
+        #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
+        self.weights = sparse.linalg.lsqr((Q + reg), P.T)[0].T
         ln.debug("finished training.")
         del P
         del Q
@@ -74,7 +77,7 @@ class mDA(object):
         del corruption
         
         if return_hidden:
-            hidden_representations = np.dot(self.weights, input_data)
+            hidden_representations = self.weights.dot(input_data[:, :-1])
             if not self.highdimen:
                 hidden_representations = np.tanh(hidden_representations)
             del input_data
