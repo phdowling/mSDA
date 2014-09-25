@@ -42,8 +42,13 @@ class mDA(object):
         #Q = scatter.multiply(corruption.dot(corruption.T))
         Q = csc_matrix((dimensionality + 1, dimensionality + 1))
 
+        ln.debug("scatter: %s" % (scatter.__repr__()))
+
+        ln.debug("...multiplying values up to (d,d)")
         Q[:dimensionality, :dimensionality] = scatter[:dimensionality, :dimensionality] * (1-self.noise)**2
+        ln.debug("...multiplying values in (d+1,:)")
         Q[dimensionality] = scatter[dimensionality] * (1-self.noise)
+        ln.debug("...multiplying values in (:,d+1)")
         Q[:, dimensionality] = scatter[:, dimensionality] * (1-self.noise)
         Q[-1, -1] = scatter[-1, -1]
 
