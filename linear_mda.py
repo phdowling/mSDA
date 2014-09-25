@@ -3,6 +3,10 @@ import logging
 ln = logging.getLogger("mDA")
 ln.setLevel(logging.DEBUG)
 
+
+from scipy.sparse import hstack
+from scipy.sparse import csc_matrix
+
 class mDA(object):
     def __init__(self, noise, lambda_, weights=None, highdimen=False):
         self.noise = noise
@@ -23,14 +27,12 @@ class mDA(object):
 
         ln.debug("mDA is beginning training.")
 
-        bias = np.ones((1, num_documents))
-        #biased = np.ones((dimensionality, num_documents+1))
-        biased = np.concatenate((input_data, bias))
-        #biased[:, :-1] = input_data
-        biased = np.matrix(biased)
+        bias = csc_matrix(np.ones((1, num_documents)))
+
+        input_data = hstack((input_data, bias))
 
         ln.debug("Created bias matrix, now computing scatter matrix.")
-        scatter = np.dot(biased, biased.T)
+        scatter = input_data.dot(input_data.T).todense()
 
         corruption = np.dot(np.ones((dimensionality + 1, 1)), (1 - self.noise))
         corruption[-1] = 1
@@ -44,7 +46,7 @@ class mDA(object):
         ln.debug("Construction P")
         if self.highdimen:
             P = np.multiply(
-                np.dot(reduced_representations, biased.T),
+                reduced_representations.dot(input_data.T).todense(),
                 np.tile(corruption.T, (reduced_dim, 1))
             )
         else:
@@ -72,13 +74,11 @@ class mDA(object):
         del corruption
         
         if return_hidden:
-            hidden_representations = np.dot(self.weights, biased)
+            hidden_representations = np.dot(self.weights, input_data)
             if not self.highdimen:
                 hidden_representations = np.tanh(hidden_representations)
-            del biased
+            del input_data
             return hidden_representations
-
-        del biased
 
 
     def get_hidden_representations(self, input_data):

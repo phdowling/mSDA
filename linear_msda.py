@@ -4,6 +4,8 @@ ln = logging.getLogger("mSDA")
 ln.setLevel(logging.DEBUG)
 from linear_mda import mDA
 
+from scipy.sparse import csc_matrix
+
 from collections import defaultdict
 
 
@@ -11,8 +13,14 @@ def convert(sparse_bow, dimensionality):
     dense = np.zeros((dimensionality, 1))
     for dim, value in sparse_bow:
         dense[dim] = value
-    return dense
+    return csc_matrix(dense)
 
+def convert_to_sparse_matrix(input_data, dimensionality):
+    sparse = csc_matrix((dimensionality, len(input_data)))
+    for idx, document in enumerate(input_data):
+        for word_id, count in document:
+            sparse[word_id, idx] = count
+    return sparse
 
 class mSDA(object):
     """
@@ -26,14 +34,16 @@ class mSDA(object):
         """
         input_data must be a numpy array, where each row represents one training documents/image/etc.
         """
-        ln.debug("got %s input documents. Converting data to Numpy matrix format.." % (len(input_data)))
+        ln.debug("got %s input documents." % (len(input_data)))
 
-        acc = []
         results = []
 
-        for idx, document in enumerate(input_data):
-            acc.append(convert(document, self.input_dimensionality))
-        acc = np.concatenate(acc, axis=1)
+        ln.debug("Constructing sparse matrix for corpus.")
+        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
+        #for idx, document in enumerate(input_data):
+        #    acc.append(convert(document, self.input_dimensionality))
+        #acc = np.concatenate(acc, axis=1)
+
         ln.debug("Beginning mSDA training.")
         representations = self._msda.train(acc, return_hidden=return_hidden)
         if return_hidden:
@@ -167,7 +177,8 @@ class _mSDA(object):
         else:
             current_representation = input_data
 
-        representations = [current_representation]
+        if return_hidden:
+            representations = [current_representation]
         ln.debug("Now training %s layers." % (len(self.layers),))
         for idx, layer in enumerate(self.layers):
             current_representation = layer.train(current_representation, return_hidden=True)
