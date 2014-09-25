@@ -66,13 +66,13 @@ class mDA(object):
             )
         else:
             ln.debug("converting to csr, slicing..")
-            P = scatter.tocsr()[:-1, :]
+            P = scatter.tocsr()[:-1, :].tocsc()
             #ln.debug("vstacking corruption")
             #corrupt = vstack(dimensionality * [corruption.T])
             ln.debug("P: %s, corruption: %s" % (repr(P), repr(corruption)))
             ln.debug("multiplying")
             P *= (1 - self.noise)
-            P[dimensionality] *= (1.0 / (1 - self.noise))
+            P[:, dimensionality] *= (1.0 / (1 - self.noise))
 
         ln.debug("Constructing reg")
         reg = csc_matrix.eye(dimensionality+1).multiply(self.lambda_)
