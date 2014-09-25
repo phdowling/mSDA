@@ -4,7 +4,7 @@ ln = logging.getLogger("mDA")
 ln.setLevel(logging.DEBUG)
 
 
-from scipy.sparse import hstack
+from scipy.sparse import vstack
 from scipy.sparse import csc_matrix
 
 class mDA(object):
@@ -29,7 +29,7 @@ class mDA(object):
 
         bias = csc_matrix(np.ones((1, num_documents)))
 
-        input_data = hstack((input_data, bias))
+        input_data = vstack((input_data, bias))
 
         ln.debug("Created bias matrix, now computing scatter matrix.")
         scatter = input_data.dot(input_data.T).todense()

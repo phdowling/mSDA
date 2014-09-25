@@ -17,11 +17,11 @@ def convert(sparse_bow, dimensionality):
 
 def convert_to_sparse_matrix(input_data, dimensionality):
     sparse = lil_matrix((dimensionality, len(input_data)))
-    for idx, document in enumerate(input_data):
-        if idx % 500 == 0:
-            ln.debug("on document %s.." % (idx,))
+    for docidx, document in enumerate(input_data):
+        if docidx % 5000 == 0:
+            ln.debug("on document %s.." % (docidx,))
         for word_id, count in document:
-            sparse[word_id, idx] = count
+            sparse[docidx, word_id] = count
     return sparse.tocsc()
 
 class mSDA(object):
