@@ -37,10 +37,18 @@ class mDA(object):
         corruption = csc_matrix(np.ones((dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
 
-        ln.debug("Applying corrution vector")
-        Q = scatter.multiply(corruption.dot(corruption.T))
+        # This part is slow. Can we work around this?
+        ln.debug("Applying corrution vector to compute Q")
+        #Q = scatter.multiply(corruption.dot(corruption.T))
+        Q = csc_matrix((dimensionality + 1, dimensionality + 1))
+
+        Q[:dimensionality, :dimensionality] = scatter[:dimensionality, :dimensionality] * (1-self.noise)**2
+        Q[dimensionality] = scatter[dimensionality] * (1-self.noise)
+        Q[:, dimensionality] = scatter[:, dimensionality] * (1-self.noise)
+        Q[-1, -1] = scatter[-1, -1]
 
         # replace the diagonal of Q
+        ln.debug("Replacing Q's diagonal")
         idxs = range(dimensionality + 1)
         Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
 
