@@ -67,8 +67,14 @@ class mDA(object):
                 np.tile(corruption.T, (reduced_dim, 1))
             )
         else:
-            P = scatter[:-1, :].multiply(
-                vstack(dimensionality * [corruption.T])
+            ln.debug("converting to csr, slicing..")
+            P = scatter.tocsr()[:-1, :]
+            ln.debug("vstacking corruption")
+            corrupt = vstack(dimensionality * [corruption.T])
+            ln.debug("corrupt: %s, P: %s" % (repr(corrupt), repr(P)))
+            ln.debug("multiplying")
+            P = P.multiply(
+                corrupt
             )
 
         ln.debug("Constructing reg")
