@@ -101,7 +101,7 @@ class mDA(object):
             current_column = PT.getcol(column).todense()
             w_row = sparse.linalg.minres(tosolve, current_column)[0]
             ln.debug("%s" % (repr(w_row)))
-            ln.debug("%s" % (w_row.todense()))
+            ln.debug("%s" % (w_row))
             self.weights = sparse.hstack([self.weights, w_row])
         ln.debug("finished training.")
 
