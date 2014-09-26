@@ -97,14 +97,16 @@ class mDA(object):
         ln.debug("Solving for W")
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
-        num_batches = 100
+        num_batches = 10
         batch_size = int(np.ceil(float(dimensionality) / num_batches))
         for batch_idx in range(num_batches):
+            ln.debug("extracting columns..")
             start = batch_idx * batch_size
             end = int(min((batch_idx + 1) * batch_size, dimensionality))
             column_idxs = range(start, end)
-
-            weights = np.linalg.lstsq(Qreg, PT[:, column_idxs].todense())
+            columns = PT[:, column_idxs].todense()
+            ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
+            weights = np.linalg.lstsq(Qreg, columns)
 
             ln.debug("finished batch %s" % (batch_idx))
             ln.debug("%s" % repr(csc_matrix(weights)))
