@@ -60,11 +60,12 @@ class mDA(object):
 
         ln.debug("Constructing P")
         if self.highdimen:
-            #TODO: this will be broken for now
-            P = np.multiply(
-                reduced_representations.dot(input_data.T).todense(),
-                np.tile(corruption.T, (reduced_dim, 1))
-            )
+            # P = xfreq*xxb'.*repmat(q', r, 1);
+            input_data.transpose()
+            P = reduced_representations.dot(input_data) * (1 - self.noise)
+            P[:, dimensionality] *= (1.0 / (1 - self.noise))
+            input_data.transpose()
+
         else:
             ln.debug("converting to csr, slicing..")
             P = scatter.tocsr()[:-1, :].tocsc()

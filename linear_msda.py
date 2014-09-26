@@ -4,6 +4,7 @@ ln = logging.getLogger("mSDA")
 ln.setLevel(logging.DEBUG)
 from linear_mda import mDA
 
+from scipy import sparse
 from scipy.sparse import csc_matrix, lil_matrix
 
 from collections import defaultdict
@@ -42,9 +43,6 @@ class mSDA(object):
 
         ln.debug("Constructing sparse matrix for corpus.")
         acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
-        #for idx, document in enumerate(input_data):
-        #    acc.append(convert(document, self.input_dimensionality))
-        #acc = np.concatenate(acc, axis=1)
 
         ln.debug("Beginning mSDA training.")
         representations = self._msda.train(acc, return_hidden=return_hidden)
@@ -77,33 +75,28 @@ class mSDAhd(object):
     def train(self, input_data, return_hidden=False, streamed=False, batch_size=3000):
         #reduced_representations
         num_docs = len(input_data)
-        if not streamed:
-            batch_size = num_docs
+        ln.debug("got %s input documents." % num_docs)
 
-        ln.debug("got %s input documents, batch size is %s" % (len(input_data), batch_size))
+        results = []
 
-        batches = 0
-        acc = []
+        ln.debug("Constructing sparse matrix for corpus.")
+        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
+
+        ln.debug("Beginning mSDA training.")
+
+        representations = self._msda.train(acc, return_hidden=return_hidden,
+                                           reduced_representations=acc[self.prototype_ids, :])
         if return_hidden:
-            results = []
-        for idx, document in enumerate(input_data):
-            acc.append(convert(document, self.input_dimensionality))
-
-            if (idx % batch_size == 0 and idx != 0) or idx == num_docs:
-                batches += 1
-                acc = np.concatenate(acc, axis=1)
-                representations = self._msda.train(acc, return_hidden=return_hidden, reduced_representations=acc[self.prototype_ids, :])
-                if return_hidden:
-                    for row in np.concatenate([rep.T for rep in representations], axis=1):
-                        results.append(row)
-                acc = []
-                ln.debug("trained on %s documents, (meta-)batch number %s.." % (idx, batches))
-        if acc:
-            ln.error("This shouldn't happen, there's still something in the accumulator!")
+            for row in np.concatenate([rep.T for rep in representations], axis=1):
+                results.append(row)
         del acc
+        del representations
+
+        ln.debug("Training done.")
 
         if return_hidden:
             return results
+
 
     def get_hidden_representations(self, input_data):
         acc = np.concatenate([convert(document, self.input_dimensionality) for document in input_data], axis=1)
@@ -152,7 +145,7 @@ class _mSDA(object):
             else:
                 assert reduced_dim == self.reduced_dim
 
-            current_representation = np.zeros((self.reduced_dim, num_documents))
+            current_representation = csc_matrix((self.reduced_dim, num_documents))
             
             if self.randomized_indices is None:
                 self.randomized_indices = np.random.permutation(dimensionality)
@@ -171,11 +164,11 @@ class _mSDA(object):
 
                 hidden = mda.train(input_data[indices, :], return_hidden=True,
                                    reduced_representations=reduced_representations)
-                current_representation += hidden
+                current_representation = current_representation + hidden
                 del hidden
 
-            current_representation /= len(range(dimensionality/self.reduced_dim))
-            current_representation = np.tanh(current_representation)
+            current_representation =  (1 / len(range(dimensionality/self.reduced_dim))) * current_representation
+            current_representation = current_representation.tanh()
         else:
             current_representation = input_data
 
