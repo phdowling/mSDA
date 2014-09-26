@@ -98,10 +98,10 @@ class mDA(object):
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
         num_batches = 100
-        batch_size = np.ceil(float(dimensionality) / num_batches)
+        batch_size = int(np.ceil(float(dimensionality) / num_batches))
         for batch_idx in range(num_batches):
             start = batch_idx * batch_size
-            end = min((batch_idx + 1) * batch_size, dimensionality)
+            end = int(min((batch_idx + 1) * batch_size, dimensionality))
             column_idxs = range(start, end)
 
             weights = np.linalg.lstsq(Qreg, PT[:, column_idxs].todense())
