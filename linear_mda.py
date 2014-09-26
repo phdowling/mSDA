@@ -84,19 +84,21 @@ class mDA(object):
         # (WQ)^T = P^T
         # Q^T W^T = P^T
         # Q W^T = P^T
-        
+
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
         # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
-        self.weights = csc_matrix()
+        self.weights = csc_matrix((0, dimensionality + 1))
+
         PT = csc_matrix(P.T)
         ln.debug("Solving for W")
-        for column in range(num_documents):
+        for column in range(dimensionality):
             if column % 500 == 0:
                 ln.debug("on column %s" % (column))
-            w_column = sparse.linalg.lsmr((Q + reg), PT[:, column])
+            w_row = sparse.linalg.lsmr((Q + reg), PT[:, column].todense()).T
 
-            self.weights = sparse.hstack(self.weights, w_column)
+            self.weights = sparse.vstack(self.weights, w_row)
         ln.debug("finished training.")
+
         del P
         del Q
         del scatter
@@ -104,10 +106,12 @@ class mDA(object):
         del corruption
         
         if return_hidden:
+            ln.debug("Computing hidden representations..")
             hidden_representations = self.weights.dot(input_data[:, :-1])
             if not self.highdimen:
                 hidden_representations = np.tanh(hidden_representations)
             del input_data
+            ln.debug("done.")
             return hidden_representations
 
 
