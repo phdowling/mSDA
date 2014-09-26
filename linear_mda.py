@@ -100,7 +100,7 @@ class mDA(object):
             current_column = PT[:, column].todense()
             w_row = csr_matrix(sparse.linalg.minres(tosolve, current_column)[0].T)
             ln.debug("%s" % (repr(w_row)))
-            self.weights = sparse.vstack(self.weights, w_row)
+            self.weights = sparse.vstack([self.weights, w_row])
         ln.debug("finished training.")
 
         del P
