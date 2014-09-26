@@ -88,7 +88,7 @@ class mDA(object):
 
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
         # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
-        self.weights = csc_matrix((0, dimensionality + 1))
+        self.weights = csr_matrix((0, dimensionality + 1))
         tosolve = (Q + reg)
         # This is based on Q and reg, and is therefore symmetric
         ln.debug("tosolve: %s" % (repr(tosolve)))
@@ -100,6 +100,7 @@ class mDA(object):
             current_column = PT[:, column].todense()
             w_row = csr_matrix(sparse.linalg.minres(tosolve, current_column)[0].T)
             ln.debug("%s" % (repr(w_row)))
+            ln.debug("%s" % (w_row.todense()))
             self.weights = sparse.vstack([self.weights, w_row])
         ln.debug("finished training.")
 
