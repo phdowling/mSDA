@@ -37,7 +37,7 @@ class mDA(object):
         corruption = csc_matrix(np.ones((dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
 
-        # This part is slow. Can we work around this?
+
         ln.debug("Applying corrution vector to compute Q")
         #Q = scatter.multiply(corruption.dot(corruption.T))
         Q = csc_matrix((dimensionality + 1, dimensionality + 1))
@@ -84,9 +84,18 @@ class mDA(object):
         # (WQ)^T = P^T
         # Q^T W^T = P^T
         # Q W^T = P^T
-        ln.debug("Solving for weights matrix")
+        
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-        self.weights = sparse.linalg.lsmr((Q + reg), P.T)[0].T
+        # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
+        self.weights = csc_matrix()
+        PT = csc_matrix(P.T)
+        ln.debug("Solving for W")
+        for column in range(num_documents):
+            if column % 500 == 0:
+                ln.debug("on column %s" % (column))
+            w_column = sparse.linalg.lsmr((Q + reg), PT[:, column])
+
+            self.weights = sparse.hstack(self.weights, w_column)
         ln.debug("finished training.")
         del P
         del Q
