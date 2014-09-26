@@ -87,15 +87,28 @@ class mDA(object):
         # Q W^T = P^T
 
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-        
+
         #self.weights = np.matrix((dimensionality + 1, 0))
-        tosolve = (Q + reg)
+        Qreg = (Q + reg).todense()
         # This is based on Q and reg, and is therefore symmetric
-        ln.debug("tosolve: %s" % (repr(tosolve)))
+        ln.debug("Qreg: %s, %s" % Qreg.shape)
         PT = csc_matrix(P.T)
-        # PT.sort_indices()
+        PT.sort_indices()
         ln.debug("Solving for W")
-        self.weights = sparse.linalg.spsolve(tosolve, PT)
+        #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
+
+        num_batches = 100
+        batch_size = np.ceil(float(dimensionality) / num_batches)
+        for batch_idx in range(num_batches):
+            start = batch_idx * batch_size
+            end = min((batch_idx + 1) * batch_size, dimensionality)
+            column_idxs = range(start, end)
+
+            weights = np.linalg.lstsq(Qreg, PT[:, column_idxs].todense())
+
+            ln.debug("finished batch %s" % (batch_idx))
+            ln.debug("%s" % repr(csc_matrix(weights)))
+
         """
         for column in range(dimensionality):
             if column % 500 == 0:
