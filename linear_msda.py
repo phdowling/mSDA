@@ -72,7 +72,7 @@ class mSDAhd(object):
         self.input_dimensionality = input_dimensionality
         self.output_dimensionality = len(prototype_ids)
 
-    def train(self, input_data, return_hidden=False, streamed=False, batch_size=3000):
+    def train(self, input_data, return_hidden=False):
         #reduced_representations
         num_docs = len(input_data)
         ln.debug("got %s input documents." % num_docs)
@@ -151,7 +151,7 @@ class _mSDA(object):
                 self.randomized_indices = np.random.permutation(dimensionality)
 
             ln.debug("Performing initial dimensional reduction with %s folds" % (dimensionality/self.reduced_dim))
-            for batch in range(dimensionality/self.reduced_dim):
+            for batch in range(int(np.ceil(float(dimensionality)/self.reduced_dim))):
                 indices = self.randomized_indices[batch*self.reduced_dim: (batch + 1)*self.reduced_dim]
 
                 ln.debug("Initial dimensional reduction on fold %s.." % batch)
@@ -167,7 +167,7 @@ class _mSDA(object):
                 current_representation = current_representation + hidden
                 del hidden
 
-            current_representation =  (1 / len(range(dimensionality/self.reduced_dim))) * current_representation
+            current_representation = (1 / len(range(dimensionality/self.reduced_dim))) * current_representation
             current_representation = current_representation.tanh()
         else:
             current_representation = input_data

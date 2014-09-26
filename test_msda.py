@@ -145,7 +145,7 @@ inv_map = {v: k for k, v in dictionary.token2id.items()}
 k = 4000
 top_k = [k for k, v in most_frequent_ids[:k]]
 
-print [inv_map[k] for k in top_k]
+#print [inv_map[k] for k in top_k]
 
 ln.debug("train mSDA")
 msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)

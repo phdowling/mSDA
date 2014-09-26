@@ -60,12 +60,19 @@ class mDA(object):
 
         ln.debug("Constructing P")
         if self.highdimen:
-            # P = xfreq*xxb'.*repmat(q', r, 1);
-            input_data.transpose()
+            # P = xfreq*xxb'.*repmat(q', r, 1); ends up being rx(d+1)
+
+            #input is now n*(d+1)
+            #reduced_reps are r*d
             ln.debug("reduced: %s, input: %s" % (repr(reduced_representations), repr(input_data)))
-            P = reduced_representations.dot(input_data) * (1 - self.noise)
+            P = reduced_representations.dot(input_data.T.to_csc()) * (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
-            input_data.transpose()
+
+
+            #P = np.multiply(
+            #    np.dot(reduced_representations, biased.T),
+            #    np.tile(corruption.T, (reduced_dim, 1))
+            #)
 
         else:
             ln.debug("converting to csr, slicing..")
