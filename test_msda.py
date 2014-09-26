@@ -142,7 +142,7 @@ most_frequent_ids = dictionary.dfs.items()[:]
 most_frequent_ids.sort(key=lambda (k, v): -v)
 
 inv_map = {v: k for k, v in dictionary.token2id.items()}
-k = 20000
+k = 4000
 top_k = [k for k, v in most_frequent_ids[:k]]
 
 print [inv_map[k] for k in top_k]

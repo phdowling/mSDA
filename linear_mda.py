@@ -62,6 +62,7 @@ class mDA(object):
         if self.highdimen:
             # P = xfreq*xxb'.*repmat(q', r, 1);
             input_data.transpose()
+            ln.debug("reduced: %s, input: %s" % (repr(reduced_representations), repr(input_data)))
             P = reduced_representations.dot(input_data) * (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
             input_data.transpose()
