@@ -88,13 +88,16 @@ class mDA(object):
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
         # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
         self.weights = csc_matrix((0, dimensionality + 1))
-
+        tosolve = (Q + reg)
+        ln.debug("tosolve: %s" % (repr(tosolve)))
         PT = csc_matrix(P.T)
         ln.debug("Solving for W")
         for column in range(dimensionality):
             if column % 500 == 0:
                 ln.debug("on column %s" % (column))
-            w_row = sparse.linalg.lsmr((Q + reg), PT[:, column].todense()).T
+            current_column = PT[:, column].todense()
+            ln.debug("current_column: %s" % (repr(current_column)))
+            w_row = sparse.linalg.lsmr(tosolve, current_column).T
 
             self.weights = sparse.vstack(self.weights, w_row)
         ln.debug("finished training.")
