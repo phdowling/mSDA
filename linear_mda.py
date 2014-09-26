@@ -65,7 +65,7 @@ class mDA(object):
             #input is now n*(d+1)
             #reduced_reps are r*d
             ln.debug("reduced: %s, input: %s" % (repr(reduced_representations), repr(input_data)))
-            P = reduced_representations.dot(input_data.T.to_csc()) * (1 - self.noise)
+            P = reduced_representations.dot(input_data.T.tocsc()) * (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
 
 
