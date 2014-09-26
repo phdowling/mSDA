@@ -88,20 +88,21 @@ class mDA(object):
 
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
         # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
-        self.weights = csr_matrix((0, dimensionality + 1))
+        self.weights = np.matrix((dimensionality + 1, 0))
         tosolve = (Q + reg)
         # This is based on Q and reg, and is therefore symmetric
         ln.debug("tosolve: %s" % (repr(tosolve)))
         PT = csc_matrix(P.T)
+        PT.sort_indices()
         ln.debug("Solving for W")
         for column in range(dimensionality):
             if column % 500 == 0:
-                ln.debug("on column %s" % (column))
-            current_column = PT[:, column].todense()
-            w_row = csr_matrix(sparse.linalg.minres(tosolve, current_column)[0].T)
+                ln.debug("on column %s" % (column,))
+            current_column = PT.getcol(column).todense()
+            w_row = sparse.linalg.minres(tosolve, current_column)[0]
             ln.debug("%s" % (repr(w_row)))
             ln.debug("%s" % (w_row.todense()))
-            self.weights = sparse.vstack([self.weights, w_row])
+            self.weights = sparse.hstack([self.weights, w_row])
         ln.debug("finished training.")
 
         del P
@@ -114,7 +115,7 @@ class mDA(object):
             ln.debug("Computing hidden representations..")
             hidden_representations = self.weights.dot(input_data[:, :-1])
             if not self.highdimen:
-                hidden_representations = np.tanh(hidden_representations)
+                hidden_representations = hidden_representations.tanh()
             del input_data
             ln.debug("done.")
             return hidden_representations
