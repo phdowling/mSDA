@@ -98,8 +98,7 @@ class mDA(object):
             if column % 500 == 0:
                 ln.debug("on column %s" % (column))
             current_column = PT[:, column].todense()
-            ln.debug("current_column: %s, %s" % (current_column.shape))
-            w_row = sparse.linalg.minres(tosolve, current_column).T
+            w_row = sparse.linalg.minres(tosolve, current_column)[0].T
 
             self.weights = sparse.vstack(self.weights, w_row)
         ln.debug("finished training.")
