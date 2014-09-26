@@ -33,13 +33,14 @@ class mDA(object):
 
         ln.debug("Created bias matrix, now computing scatter matrix")
         scatter = input_data.dot(input_data.T)
+        # scatter is symmetric!
 
         corruption = csc_matrix(np.ones((dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
 
 
         ln.debug("Applying corrution vector to compute Q")
-        #Q = scatter.multiply(corruption.dot(corruption.T))
+        # Q = scatter.multiply(corruption.dot(corruption.T))
         Q = csc_matrix((dimensionality + 1, dimensionality + 1))
 
         ln.debug("scatter: %s" % (scatter.__repr__()))
@@ -89,6 +90,7 @@ class mDA(object):
         # TODO: we need to compute the least square solution for each column of P.T, then hstack the results
         self.weights = csc_matrix((0, dimensionality + 1))
         tosolve = (Q + reg)
+        # This is based on Q and reg, and is therefore symmetric
         ln.debug("tosolve: %s" % (repr(tosolve)))
         PT = csc_matrix(P.T)
         ln.debug("Solving for W")
@@ -97,7 +99,7 @@ class mDA(object):
                 ln.debug("on column %s" % (column))
             current_column = PT[:, column].todense()
             ln.debug("current_column: %s, %s" % (current_column.shape))
-            w_row = sparse.linalg.lsqr(tosolve, current_column).T
+            w_row = sparse.linalg.minres(tosolve, current_column).T
 
             self.weights = sparse.vstack(self.weights, w_row)
         ln.debug("finished training.")
