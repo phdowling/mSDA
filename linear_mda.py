@@ -5,7 +5,7 @@ ln.setLevel(logging.DEBUG)
 
 from scipy import sparse
 from scipy.sparse import vstack
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, csr_matrix
 
 class mDA(object):
     def __init__(self, noise, lambda_, weights=None, highdimen=False):
@@ -98,8 +98,8 @@ class mDA(object):
             if column % 500 == 0:
                 ln.debug("on column %s" % (column))
             current_column = PT[:, column].todense()
-            w_row = sparse.linalg.minres(tosolve, current_column)[0].T
-
+            w_row = csr_matrix(sparse.linalg.minres(tosolve, current_column)[0].T)
+            ln.debug("%s" % (repr(w_row)))
             self.weights = sparse.vstack(self.weights, w_row)
         ln.debug("finished training.")
 
