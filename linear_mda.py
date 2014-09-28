@@ -29,7 +29,7 @@ class mDA(object):
 
         bias = csc_matrix(np.ones((1, num_documents)))
 
-        input_data = vstack((input_data, bias))
+        input_data = vstack((input_data, bias)).tocsc()
 
         ln.debug("Created bias matrix, now computing scatter matrix")
         scatter = input_data.dot(input_data.T)
@@ -151,9 +151,9 @@ class mDA(object):
         
         if return_hidden:
             ln.debug("Computing hidden representations..")
-            hidden_representations = self.weights.dot(input_data[:, :-1])
+            hidden_representations = self.weights.dot(input_data[:, :-1].todense())
             if not self.highdimen:
-                hidden_representations = hidden_representations.tanh()
+                hidden_representations = np.tanh(hidden_representations)
             del input_data
             ln.debug("done.")
             return hidden_representations
