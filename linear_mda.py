@@ -151,7 +151,8 @@ class mDA(object):
         
         if return_hidden:
             ln.debug("Computing hidden representations..")
-            hidden_representations = self.weights.dot(input_data[:, :-1].todense())
+            # TODO: change this to sparse when we're not doing dimensional reduction
+            hidden_representations = self.weights.dot(input_data.todense())
             if not self.highdimen:
                 hidden_representations = np.tanh(hidden_representations)
             del input_data
