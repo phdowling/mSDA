@@ -107,7 +107,7 @@ class mDA(object):
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
         # gonna be dx(d+1)
-        self.weights = np.matrix((dimensionality, 0))
+        self.weights = np.zeros((dimensionality, 0))
 
         if self.highdimen:
             num_batches = 1
@@ -126,7 +126,7 @@ class mDA(object):
             weights = np.linalg.lstsq(Qreg, columns)[0].T
             ln.debug("weights: %s, %s" % weights.shape)
 
-            self.weights = sparse.hstack([self.weights, weights])
+            self.weights = np.hstack([self.weights, weights])
 
             ln.debug("finished batch %s" % (batch_idx))
             ln.debug("%s" % repr(csc_matrix(weights)))
