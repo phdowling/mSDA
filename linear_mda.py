@@ -123,7 +123,8 @@ class mDA(object):
             # PT is (d+1) x r = (d + 1)xd
             columns = PT[:, column_idxs].todense()
             ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
-            weights = np.linalg.lstsq(Qreg, columns)[0].T
+            weights = np.linalg.lstsq(Qreg, columns)[0]
+            ln.debug("weights: %s, %s" % weights.shape)
 
             self.weights = sparse.hstack([self.weights, weights])
 
