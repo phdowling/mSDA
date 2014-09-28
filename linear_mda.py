@@ -97,7 +97,7 @@ class mDA(object):
 
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
 
-        #self.weights = np.matrix((dimensionality + 1, 0))
+
         Qreg = (Q + reg).todense()
         # This is based on Q and reg, and is therefore symmetric
         ln.debug("Qreg: %s, %s" % Qreg.shape)
@@ -106,10 +106,14 @@ class mDA(object):
         ln.debug("Solving for W")
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
+
+        self.weights = np.matrix((dimensionality + 1, 0))
+
         if self.highdimen:
             num_batches = 1
         else:
             num_batches = 10
+
         batch_size = int(np.ceil(float(dimensionality) / num_batches))
         for batch_idx in range(num_batches):
             ln.debug("extracting columns..")
@@ -119,6 +123,8 @@ class mDA(object):
             columns = PT[:, column_idxs].todense()
             ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
             weights = np.linalg.lstsq(Qreg, columns)[0]
+
+            self.weights = sparse.hstack([self.weights, weights])
 
             ln.debug("finished batch %s" % (batch_idx))
             ln.debug("%s" % repr(csc_matrix(weights)))
