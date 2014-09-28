@@ -106,8 +106,8 @@ class mDA(object):
         ln.debug("Solving for W")
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
-
-        self.weights = np.matrix((dimensionality + 1, 0))
+        # gonna be dx(d+1)
+        self.weights = np.matrix((dimensionality, 0))
 
         if self.highdimen:
             num_batches = 1
@@ -120,9 +120,10 @@ class mDA(object):
             start = batch_idx * batch_size
             end = int(min((batch_idx + 1) * batch_size, dimensionality))
             column_idxs = range(start, end)
+            # PT is (d+1) x r = (d + 1)xd
             columns = PT[:, column_idxs].todense()
             ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
-            weights = np.linalg.lstsq(Qreg, columns)[0]
+            weights = np.linalg.lstsq(Qreg, columns)[0].T
 
             self.weights = sparse.hstack([self.weights, weights])
 
