@@ -25,7 +25,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 class Reuters21578DataSource():
     def __init__(self):
         self.reutersFiles = []
-        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(5)]# + ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
+        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(10)] +\
+                         ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
         self.updateCount = 0
         self.updating = False
 
@@ -142,7 +143,7 @@ most_frequent_ids = dictionary.dfs.items()[:]
 most_frequent_ids.sort(key=lambda (k, v): -v)
 
 inv_map = {v: k for k, v in dictionary.token2id.items()}
-k = 2000
+k = 4000
 top_k = [k for k, v in most_frequent_ids[:k]]
 
 #print [inv_map[k] for k in top_k]
