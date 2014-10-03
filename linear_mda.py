@@ -20,6 +20,7 @@ class mDA(object):
 
     def train(self, input_data, return_hidden=False, reduced_representations=None):
         dimensionality, num_documents = input_data.shape
+
         if self.highdimen:
             assert reduced_representations is not None
             reduced_dim, num_docs2 = reduced_representations.shape
@@ -31,7 +32,7 @@ class mDA(object):
 
         input_data = vstack((input_data, bias)).tocsc()
 
-        ln.debug("Created bias matrix, now computing scatter matrix")
+        #ln.debug("Created bias matrix, now computing scatter matrix")
         scatter = input_data.dot(input_data.T)
         # scatter is symmetric!
 
@@ -39,26 +40,26 @@ class mDA(object):
         corruption[-1] = 1
 
 
-        ln.debug("Applying corrution vector to compute Q")
+        #ln.debug("Applying corrution vector to compute Q")
         # Q = scatter.multiply(corruption.dot(corruption.T))
         Q = csc_matrix((dimensionality + 1, dimensionality + 1))
 
         ln.debug("scatter: %s" % (scatter.__repr__()))
 
-        ln.debug("...multiplying values up to (d,d)")
+        #ln.debug("...multiplying values up to (d,d)")
         Q = scatter * (1-self.noise)**2
-        ln.debug("...multiplying values in (d+1,:)")
+        #ln.debug("...multiplying values in (d+1,:)")
         Q[dimensionality] = scatter[dimensionality] * (1.0/(1-self.noise))
-        ln.debug("...multiplying values in (:,d+1)")
+        #ln.debug("...multiplying values in (:,d+1)")
         Q[:, dimensionality] = scatter[:, dimensionality] * (1.0/(1-self.noise))
         Q[-1, -1] = scatter[-1, -1] * (1.0/(1-self.noise)**2)
 
         # replace the diagonal of Q
-        ln.debug("Replacing Q's diagonal")
+        #ln.debug("Replacing Q's diagonal")
         idxs = range(dimensionality + 1)
         Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
 
-        ln.debug("Constructing P")
+        #ln.debug("Constructing P")
         if self.highdimen:
             # P = xfreq*xxb'.*repmat(q', r, 1); ends up being rx(d+1)
 
@@ -75,17 +76,17 @@ class mDA(object):
             #)
 
         else:
-            ln.debug("converting to csr, slicing..")
+            #ln.debug("converting to csr, slicing..")
             P = scatter.tocsr()[:-1, :].tocsc()
             #ln.debug("vstacking corruption")
             #corrupt = vstack(dimensionality * [corruption.T])
-            ln.debug("P: %s, corruption: %s" % (repr(P), repr(corruption)))
-            ln.debug("multiplying")
+            #ln.debug("P: %s, corruption: %s" % (repr(P), repr(corruption)))
+            #ln.debug("multiplying")
             P *= (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
 
-        ln.debug("Constructing reg")
-        reg = sparse.eye(dimensionality+1, format="csc").multiply(self.lambda_)
+        #ln.debug("Constructing reg")
+        reg = sparse.eye(dimensionality + 1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
 
         # we need to solve W = P * Q^-1
@@ -97,30 +98,29 @@ class mDA(object):
 
         #self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
 
-
         Qreg = (Q + reg).todense()
         # This is based on Q and reg, and is therefore symmetric
-        ln.debug("Qreg: %s, %s" % Qreg.shape)
+        #ln.debug("Qreg: %s, %s" % Qreg.shape)
         PT = csc_matrix(P.T)
         PT.sort_indices()
-        ln.debug("Solving for W")
+        #ln.debug("Solving for W")
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
         # gonna be dx(d+1)
-        self.weights = np.zeros((dimensionality, 0))
+        self.weights = np.zeros((reduced_dim, 0))
 
         if self.highdimen:
             num_batches = 1
         else:
             num_batches = 10
 
-        batch_size = int(np.ceil(float(dimensionality) / num_batches))
+        batch_size = int(np.ceil(float(reduced_dim) / num_batches))
         for batch_idx in range(num_batches):
-            ln.debug("extracting columns..")
+            #ln.debug("extracting columns..")
             start = batch_idx * batch_size
-            end = int(min((batch_idx + 1) * batch_size, dimensionality))
+            end = int(min((batch_idx + 1) * batch_size, reduced_dim))
             column_idxs = range(start, end)
-            # PT is (d+1) x r = (d + 1)xd
+            # PT is (d+1) x r
             columns = PT[:, column_idxs].todense()
             ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
             weights = np.linalg.lstsq(Qreg, columns)[0].T
@@ -131,16 +131,6 @@ class mDA(object):
             ln.debug("finished batch %s" % (batch_idx))
             ln.debug("%s" % repr(csc_matrix(weights)))
 
-        """
-        for column in range(dimensionality):
-            if column % 500 == 0:
-                ln.debug("on column %s" % (column,))
-            current_column = PT.getcol(column).todense()
-            w_row = sparse.linalg.minres(tosolve, current_column)[0]
-            ln.debug("%s" % (repr(w_row)))
-            ln.debug("%s" % (w_row))
-            self.weights = sparse.hstack([self.weights, w_row])
-        """
         ln.debug("finished training.")
 
         del P
