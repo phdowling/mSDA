@@ -148,8 +148,8 @@ top_k = [k for k, v in most_frequent_ids[:k]]
 #print [inv_map[k] for k in top_k]
 
 ln.debug("train mSDA")
-msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
-#msda = mSDA(noise=0.5, num_layers=5, input_dimensionality=len(dictionary))
+#msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
+msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(dictionary))
 
 representations = msda.train(all_preprocessed, return_hidden=True)
 
