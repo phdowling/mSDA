@@ -40,6 +40,9 @@ class mDA(object):
         corruption = csc_matrix(np.ones((dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
 
+        # this is a hacky translation of the original Matlab code, to avoid allocating a big (d+1)x(d+1) matrix
+        # instead of element-wise multiplying the matrices, we handle the corresponding areas individually
+
         # corrupt everything
         Q = scatter * (1-self.noise)**2
         # partially undo corruption to values in (d+1,:)
@@ -49,8 +52,11 @@ class mDA(object):
         # undo corruption of (-1, -1)
         Q[-1, -1] = scatter[-1, -1] * (1.0/(1-self.noise)**2)
 
+        # replace the diagonal (this is according to the original code again)
         idxs = range(dimensionality + 1)
         Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
+
+        ln.debug("nnz for Q: %s" % (np.count_nonzero(Q)))
 
         # Constructing P
         if self.reduce_dimensionality:
@@ -61,6 +67,8 @@ class mDA(object):
             P = scatter.tocsr()[:-1, :].tocsc()
             P *= (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
+
+        ln.debug("nnz for P: %s" % (np.count_nonzero(P)))
 
         reg = sparse.eye(dimensionality + 1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
@@ -106,6 +114,8 @@ class mDA(object):
 
             ln.debug("finished batch %s" % (batch_idx,))
 
+        ln.debug("nnz for weights: %s" % (np.count_nonzero(self.weights)))
+
         ln.debug("finished training.")
 
         del P
@@ -123,6 +133,7 @@ class mDA(object):
                 hidden_representations = self.weights.dot(input_data.todense())
                 hidden_representations = np.tanh(hidden_representations)
             del input_data
+            ln.debug("nnz for hidden: %s" % (np.count_nonzero(hidden_representations)))
             return hidden_representations
 
 
