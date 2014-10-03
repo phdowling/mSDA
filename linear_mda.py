@@ -20,11 +20,14 @@ class mDA(object):
 
     def train(self, input_data, return_hidden=False, reduced_representations=None):
         dimensionality, num_documents = input_data.shape
+        output_dim = dimensionality
 
         if self.highdimen:
             assert reduced_representations is not None
             reduced_dim, num_docs2 = reduced_representations.shape
             assert num_docs2 == num_documents
+
+            output_dim = reduced_dim
 
         ln.debug("mDA is beginning training.")
 
@@ -107,18 +110,18 @@ class mDA(object):
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
         # gonna be dx(d+1)
-        self.weights = np.zeros((reduced_dim, 0))
+        self.weights = np.zeros((output_dim, 0))
 
         if self.highdimen:
             num_batches = 1
         else:
             num_batches = 10
 
-        batch_size = int(np.ceil(float(reduced_dim) / num_batches))
+        batch_size = int(np.ceil(float(output_dim) / num_batches))
         for batch_idx in range(num_batches):
             #ln.debug("extracting columns..")
             start = batch_idx * batch_size
-            end = int(min((batch_idx + 1) * batch_size, reduced_dim))
+            end = int(min((batch_idx + 1) * batch_size, output_dim))
             column_idxs = range(start, end)
             # PT is (d+1) x r
             columns = PT[:, column_idxs].todense()
