@@ -109,8 +109,8 @@ class mDA(object):
         #ln.debug("Solving for W")
         #self.weights = sparse.linalg.spsolve(tosolve.tocsc(), PT)
 
-        # gonna be dx(d+1)
-        self.weights = np.zeros((output_dim, 0))
+        # gonna be dx(d+1) (or rx(d+1) for high dimensions)
+        self.weights = np.zeros((0, dimensionality + 1))
 
         if self.highdimen:
             num_batches = 1
@@ -119,20 +119,22 @@ class mDA(object):
 
         batch_size = int(np.ceil(float(output_dim) / num_batches))
         for batch_idx in range(num_batches):
-            #ln.debug("extracting columns..")
+
             start = batch_idx * batch_size
             end = int(min((batch_idx + 1) * batch_size, output_dim))
             column_idxs = range(start, end)
+
             # PT is (d+1) x r
-            columns = PT[:, column_idxs].todense()
-            ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % columns.shape)
-            weights = np.linalg.lstsq(Qreg, columns)[0].T
+            pt_columns = PT[:, column_idxs].todense()
+
+            ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % pt_columns.shape)
+            weights = np.linalg.lstsq(Qreg, pt_columns)[0].T
+
             ln.debug("weights: %s, %s" % weights.shape)
 
-            self.weights = np.hstack([self.weights, weights])
+            self.weights = np.vstack([self.weights, weights])
 
-            ln.debug("finished batch %s" % (batch_idx))
-            ln.debug("%s" % repr(csc_matrix(weights)))
+            ln.debug("finished batch %s" % (batch_idx,))
 
         ln.debug("finished training.")
 
