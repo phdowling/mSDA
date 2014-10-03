@@ -167,7 +167,7 @@ class _mSDA(object):
                 current_representation = current_representation + hidden
                 del hidden
 
-            current_representation = (1 / len(range(dimensionality/self.reduced_dim))) * current_representation
+            current_representation = (1.0 / len(range(dimensionality/self.reduced_dim))) * current_representation
             current_representation = np.tanh(current_representation)
         else:
             current_representation = input_data

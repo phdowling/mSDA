@@ -93,7 +93,7 @@ class mDA(object):
         if self.reduce_dimensionality:
             num_batches = 1
         else:
-            num_batches = 1
+            num_batches = 10
 
         # we solve the system in batched to possibly conserve some memory for high dimensional data
         batch_size = int(np.ceil(float(output_dim) / num_batches))
