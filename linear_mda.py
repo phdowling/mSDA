@@ -56,7 +56,7 @@ class mDA(object):
         idxs = range(dimensionality + 1)
         Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
 
-        ln.debug("nnz for Q: %s" % (np.count_nonzero(Q)))
+        ln.debug("nnz for Q: %s" % (Q.nnz,))
 
         # Constructing P
         if self.reduce_dimensionality:
@@ -68,7 +68,7 @@ class mDA(object):
             P *= (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
 
-        ln.debug("nnz for P: %s" % (np.count_nonzero(P)))
+        ln.debug("nnz for P: %s" % (P.nnz,))
 
         reg = sparse.eye(dimensionality + 1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
