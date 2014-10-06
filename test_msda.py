@@ -25,7 +25,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 class Reuters21578DataSource():
     def __init__(self):
         self.reutersFiles = []
-        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(3)]  # + ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
+        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(1)]  # + ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
         self.updateCount = 0
         self.updating = False
 
@@ -154,10 +154,8 @@ msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(dictionary))
 representations = msda.train(all_preprocessed, return_hidden=True)
 
 
-
 def get_reps(string1):
     bow1 = preprocessor.preprocess(string1, dictionary, allow_update=False)
     reps1 = msda.get_hidden_representations([bow1])
-
     return reps1
 

@@ -11,11 +11,7 @@ class mDA(object):
     def __init__(self, noise, lambda_, weights=None, highdimen=False):
         self.noise = noise
         self.lambda_ = lambda_
-        if not weights:
-            self.weights = []
-        else:
-            self.weights = weights
-
+        self.weights = weights
         self.reduce_dimensionality = highdimen
 
     def train(self, input_data, return_hidden=False, reduced_representations=None):
@@ -29,7 +25,7 @@ class mDA(object):
 
             output_dim = reduced_dim
 
-        ln.debug("mDA beginning training.")
+        ln.info("mDA beginning training.")
 
         bias = csc_matrix(np.ones((1, num_documents)))
 
@@ -56,8 +52,6 @@ class mDA(object):
         idxs = range(dimensionality + 1)
         Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
 
-        ln.debug("nnz for Q: %s" % (Q.nnz,))
-
         # Constructing P
         if self.reduce_dimensionality:
             P = reduced_representations.dot(input_data.T.tocsc()) * (1 - self.noise)
@@ -67,8 +61,6 @@ class mDA(object):
             P = scatter.tocsr()[:-1, :].tocsc()
             P *= (1 - self.noise)
             P[:, dimensionality] *= (1.0 / (1 - self.noise))
-
-        ln.debug("nnz for P: %s" % (P.nnz,))
 
         reg = sparse.eye(dimensionality + 1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
@@ -106,18 +98,12 @@ class mDA(object):
             # PT is (d+1) x r
             pt_columns = PT[:, column_idxs].todense()
 
-            ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % pt_columns.shape)
+            #ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % pt_columns.shape)
             weights = np.linalg.lstsq(Qreg, pt_columns)[0].T
-
-            ln.debug("weights: %s, %s" % weights.shape)
 
             self.weights = np.vstack([self.weights, weights])
 
-            ln.debug("finished batch %s" % (batch_idx,))
-
-        ln.debug("nnz for weights: %s" % (np.count_nonzero(self.weights)))
-
-        ln.debug("finished training.")
+        ln.info("finished training.")
 
         del P
         del Q
@@ -141,17 +127,15 @@ class mDA(object):
     def get_hidden_representations(self, input_data):
         dimensionality, num_documents = input_data.shape
 
-        bias = np.ones((1, num_documents))
+        bias = csc_matrix(np.ones((1, num_documents)))
 
-        biased = np.concatenate((input_data, bias))
+        input_data = vstack((input_data, bias)).todense()
 
-        biased = np.matrix(biased)
-
-        hidden_representations = np.dot(self.weights, biased)
+        hidden_representations = np.dot(self.weights, input_data)
         if not self.reduce_dimensionality:
             hidden_representations = np.tanh(hidden_representations)
 
-        del biased
+        del input_data
         del bias
 
         return hidden_representations

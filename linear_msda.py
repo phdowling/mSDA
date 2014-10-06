@@ -7,8 +7,7 @@ from linear_mda import mDA
 from scipy import sparse
 from scipy.sparse import csc_matrix, lil_matrix
 
-from collections import defaultdict
-
+from ast import literal_eval
 
 def convert(sparse_bow, dimensionality):
     dense = np.zeros((dimensionality, 1))
@@ -37,7 +36,6 @@ class mSDA(object):
         """
         input_data must be a numpy array, where each row represents one training documents/image/etc.
         """
-        ln.debug("got %s input documents." % (len(input_data)))
 
         results = []
 
@@ -60,6 +58,13 @@ class mSDA(object):
     def get_hidden_representations(self, input_data):
         return self._msda.get_hidden_representations(input_data)
 
+    def save(self, filename):
+        self._msda.save(filename)
+
+    @classmethod
+    def load(cls, filename):
+        return _mSDA.load(filename)
+
 
 class mSDAhd(object):
     """
@@ -67,7 +72,7 @@ class mSDAhd(object):
     Use this class for creating semantic models of textual data. 
     """
     def __init__(self, prototype_ids, input_dimensionality, noise=0.5, num_layers=5):
-        self._msda = _mSDA(noise, num_layers, highdimen=True)
+        self._msda = _mSDA(noise, num_layers, highdimen=True, reduced_dim=len(prototype_ids))
         self.prototype_ids = prototype_ids
         self.input_dimensionality = input_dimensionality
         self.output_dimensionality = len(prototype_ids)
@@ -99,10 +104,17 @@ class mSDAhd(object):
 
 
     def get_hidden_representations(self, input_data):
-        acc = np.concatenate([convert(document, self.input_dimensionality) for document in input_data], axis=1)
+        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
         reps = self._msda.get_hidden_representations(acc)
 
         return reps
+
+    def save(self, filename):
+        self._msda.save(filename)
+
+    @classmethod
+    def load(cls, filename):
+        return _mSDA.load(filename)
 
 
 class _mSDA(object):
@@ -110,7 +122,7 @@ class _mSDA(object):
     Implementation class for both regular and dimensionality reduction mSDA. 
     Probably don't want to initialize this directly, the provided utility classes are easier to deal with.
     """
-    def __init__(self, noise, num_layers, highdimen=False):
+    def __init__(self, noise, num_layers, highdimen=False, reduced_dim=None):
         self.highdimen = highdimen
         self.lambda_ = 1e-05
         self.noise = noise
@@ -118,7 +130,7 @@ class _mSDA(object):
             self.hdlayer = []
             self.layers = [mDA(noise, self.lambda_) for _ in range(num_layers - 1)]
             self.randomized_indices = None
-            self.reduced_dim = None
+            self.reduced_dim = reduced_dim
         else:
             self.layers = [mDA(noise, self.lambda_) for _ in range(num_layers)]
 
@@ -131,26 +143,21 @@ class _mSDA(object):
         """
 
         dimensionality, num_documents = input_data.shape
-        ln.debug("dimensionality is %s, num_documents is %s" % (dimensionality, num_documents))
         
         # this handles the initial dimensional reduction
         if self.highdimen:
-            ln.debug("High dimen is True")
             assert reduced_representations is not None
             reduced_dim, num_docs2 = reduced_representations.shape
             assert num_docs2 == num_documents
-
-            if self.reduced_dim is None:
-                self.reduced_dim = reduced_dim
-            else:
-                assert reduced_dim == self.reduced_dim
+            assert reduced_dim == self.reduced_dim
 
             current_representation = csc_matrix((self.reduced_dim, num_documents))
             
             if self.randomized_indices is None:
                 self.randomized_indices = np.random.permutation(dimensionality)
 
-            ln.debug("Performing initial dimensional reduction with %s folds" % (dimensionality/self.reduced_dim))
+            ln.debug("Performing initial dimensional reduction with %s folds" % (int(np.ceil(float(dimensionality) /
+                                                                                             self.reduced_dim))))
             for batch in range(int(np.ceil(float(dimensionality)/self.reduced_dim))):
                 indices = self.randomized_indices[batch*self.reduced_dim: (batch + 1)*self.reduced_dim]
 
@@ -193,7 +200,7 @@ class _mSDA(object):
             assert self.randomized_indices is not None
             current_representation = np.zeros((self.reduced_dim, num_documents))    
             
-            for batch in range(dimensionality/self.reduced_dim):
+            for batch in range(int(np.ceil(float(dimensionality)/self.reduced_dim))):
                 indices = self.randomized_indices[batch*self.reduced_dim: (batch + 1)*self.reduced_dim]
                 
                 mda = self.hdlayer[batch]
@@ -212,3 +219,90 @@ class _mSDA(object):
             representations.append(current_representation)
 
         return representations
+
+
+    def save(self, filename_prefix):
+        # need to save:
+        #
+        # type of msda
+        # number of layers
+        # noise level
+        #
+        # if msdahd:
+        #   save randomized indices
+        #   save each block's W matrix in the HD layer
+        #
+        # save each W matrix of the layers
+
+        with open(filename_prefix, "w") as f:
+            if self.highdimen:
+                f.write("highdimen=True\n")
+                f.write("num_layers=%s\n" % (len(self.layers) + 1,))
+            else:
+                f.write("highdimen=False\n")
+                f.write("num_layers=%s\n" % (len(self.layers),))
+            f.write("noise=%s" % self.noise)
+
+        if self.highdimen:
+            np.save(filename_prefix + "_randidx", self.randomized_indices)
+            for idx, block in enumerate(self.hdlayer):
+                np.save(filename_prefix + "_block%s" % idx, block.weights)
+        for idx, layer in enumerate(self.layers):
+            np.save(filename_prefix + "_layer%s" % idx, layer.weights)
+
+    @classmethod
+    def load(cls, filename_prefix):
+        # load metadata
+        highdimen = None
+        num_layers = None
+
+        noise = None
+        with open(filename_prefix, "r") as f:
+            for line in f.readlines():
+                if line.startswith("highdimen="):
+                    highdimen = line.strip().endswith("True")
+                elif line.startswith("num_layers="):
+                    num_layers = int(line[line.index("=") + 1:].strip())
+                elif line.startswith("noise="):
+                    noise = float(line[line.index("=") + 1:].strip())
+                else:
+                    raise ValueError("Invalid line: \"%s\"" % line)
+
+        # make sure everything is there
+        assert highdimen is not None
+        assert num_layers is not None
+        assert noise is not None
+        print highdimen
+        print num_layers
+
+        # load hidden layer W matrices
+        layers = []
+        for layeridx in range(num_layers - (1 if highdimen else 0)):
+            layers.append(np.load(filename_prefix + "_layer%s.npy" % layeridx))
+
+        # if HD: load the W matrices for each block in the first layer
+        blocks = []
+        if highdimen:
+            randomized_indices = np.load(filename_prefix + "_randidx.npy")
+
+            output_dim, _ = layers[0].shape
+            num_blocks = int(np.ceil(float(len(randomized_indices))/output_dim))
+            for blockidx in range(num_blocks):
+                blocks.append(np.load(filename_prefix + "_block%s.npy" % blockidx))
+
+        # initialize mSDA
+        if highdimen:
+            msda = mSDAhd(prototype_ids=range(output_dim), input_dimensionality=len(randomized_indices), noise=noise,
+                          num_layers=num_layers)
+            for block in blocks:
+                lambda_ = 1e-05
+                msda._msda.hdlayer.append(mDA(noise=noise, lambda_=lambda_, weights=block, highdimen=True))
+            msda._msda.randomized_indices = randomized_indices
+        else:
+            msda = mSDA(input_dimensionality=len(randomized_indices), noise=noise, num_layers=num_layers)
+
+        # assign layers with the loaded W matrices
+        for idx, layer in enumerate(msda._msda.layers):
+            layer.weights = layers[idx]
+
+        return msda
