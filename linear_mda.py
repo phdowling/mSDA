@@ -120,7 +120,6 @@ class mDA(object):
                 hidden_representations = self.weights.dot(input_data.todense())
                 hidden_representations = np.tanh(hidden_representations)
             del input_data
-            ln.debug("nnz for hidden: %s" % (np.count_nonzero(hidden_representations)))
             return hidden_representations
 
 

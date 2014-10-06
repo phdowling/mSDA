@@ -18,8 +18,6 @@ def convert(sparse_bow, dimensionality):
 def convert_to_sparse_matrix(input_data, dimensionality):
     sparse = lil_matrix((dimensionality, len(input_data)))
     for docidx, document in enumerate(input_data):
-        if docidx % 5000 == 0:
-            ln.debug("on document %s.." % (docidx,))
         for word_id, count in document:
             sparse[word_id, docidx] = count
     return sparse.tocsc()
@@ -92,6 +90,8 @@ class mSDAhd(object):
 
         representations = self._msda.train(acc, return_hidden=return_hidden,
                                            reduced_representations=acc[self.prototype_ids, :])
+
+        # seperate the columns from one another, so that we return a list of vectors
         if return_hidden:
             for row in np.concatenate([rep.T for rep in representations], axis=1):
                 results.append(row)
@@ -104,9 +104,9 @@ class mSDAhd(object):
             return results
 
 
-    def get_hidden_representations(self, input_data):
+    def get_hidden_representations(self, input_data, seperate=False):
         acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
-        reps = self._msda.get_hidden_representations(acc)
+        reps = self._msda.get_hidden_representations(acc, seperate=seperate)
 
         return reps
 
@@ -192,7 +192,7 @@ class _mSDA(object):
         if return_hidden:
             return representations
 
-    def get_hidden_representations(self, input_data):
+    def get_hidden_representations(self, input_data, seperate=False):
         """
         convert 
         """
@@ -214,10 +214,15 @@ class _mSDA(object):
         else:
             current_representation = input_data
 
+
         representations = [current_representation]
+
         for layer in self.layers:
             current_representation = layer.get_hidden_representations(current_representation)
             representations.append(current_representation)
+
+        if not seperate:
+            representations = np.vstack(representations)
 
         return representations
 
