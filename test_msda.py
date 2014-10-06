@@ -25,7 +25,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 class Reuters21578DataSource():
     def __init__(self):
         self.reutersFiles = []
-        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(1)]  # + ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
+        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(10)] + \
+                         ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
         self.updateCount = 0
         self.updating = False
 
@@ -139,10 +140,10 @@ ln.debug("dictionary has %s unique terms" % len(dictionary))
 
 ln.debug("find most frequent terms")
 most_frequent_ids = dictionary.dfs.items()[:]
-most_frequent_ids.sort(key=lambda (k, v): -v)
+most_frequent_ids.sort(key=lambda (key, val): -val)
 
 inv_map = {v: k for k, v in dictionary.token2id.items()}
-k = 1500
+k = 3000
 top_k = [k for k, v in most_frequent_ids[:k]]
 
 #print [inv_map[k] for k in top_k]
@@ -152,6 +153,7 @@ msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
 #msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(dictionary))
 
 representations = msda.train(all_preprocessed, return_hidden=True)
+msda.save("reuters21578_3000dim_nostem")
 
 
 def get_reps(string1):
