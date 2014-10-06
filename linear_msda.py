@@ -56,7 +56,8 @@ class mSDA(object):
             return results
 
     def get_hidden_representations(self, input_data):
-        return self._msda.get_hidden_representations(input_data)
+        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
+        return self._msda.get_hidden_representations(acc)
 
     def save(self, filename):
         self._msda.save(filename)
