@@ -64,7 +64,7 @@ class Document(object):
         self.vectors = dict()
 
     def __iter__(self):
-        for id, token in self.preprocessed:
+        for id_, token in self.preprocessed:
             yield token
 
     def __len__(self):
@@ -118,7 +118,7 @@ class TokenizingPorter2Stemmer():
         return [term for term in text if not isNonsense(term)]
 
     def removePunctuation(self, text):
-        return [term.translate(string.maketrans("",""), string.punctuation) for term in text]
+        return [term.translate(string.maketrans("", ""), string.punctuation) for term in text]
 
     def removeStopWords(self, textSet):
         return textSet - self.stopWords

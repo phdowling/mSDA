@@ -1,40 +1,85 @@
+__author__ = 'dowling'
+
 import numpy as np
 import logging
 ln = logging.getLogger("mDA")
 ln.setLevel(logging.DEBUG)
 
 from scipy import sparse
-from scipy.sparse import vstack, csc_matrix, csr_matrix
+from scipy.sparse import hstack, vstack, csc_matrix, csr_matrix
+
+from itertools import izip
 
 
 class mDA(object):
-    def __init__(self, noise, lambda_, weights=None, highdimen=False):
+    def __init__(self, noise, lambda_, input_dimensionality, output_dimensionality=None):
         self.noise = noise
         self.lambda_ = lambda_
-        self.weights = weights
-        self.reduce_dimensionality = highdimen
+        self.input_dimensionality = input_dimensionality
+        self.reduce_dimensionality = bool(output_dimensionality)
+        if output_dimensionality:
+            self.output_dimensionality = output_dimensionality
 
-    def train(self, input_data, return_hidden=False, reduced_representations=None):
-        dimensionality, num_documents = input_data.shape
-        output_dim = dimensionality
+        self.weights = None
 
-        if self.reduce_dimensionality:
-            assert reduced_representations is not None
-            reduced_dim, num_docs2 = reduced_representations.shape
-            assert num_docs2 == num_documents
-
-            output_dim = reduced_dim
-
+    def train(self, input_data, reduced_representations=None):
         ln.info("mDA beginning training.")
 
-        bias = csc_matrix(np.ones((1, num_documents)))
+        # DIMENSIONS OVERVIEW
+        # scatter: always (d+1) x (d+1)
+        # P: in normal mDA d x (d+1), else r x (d+1)
+        # Q: same as scatter
+        # W: in normal mDA d x (d+1), else r x (d+1)
 
-        input_data = vstack((input_data, bias)).tocsc()
+        # we do the following in limited memory with a streamed corpus to more documents
 
-        scatter = input_data.dot(input_data.T)  # scatter is symmetric!
+        scatter = np.zeros((self.input_dimensionality + 1, self.input_dimensionality + 1), dtype=float)
+        if self.reduce_dimensionality:
+            ln.debug("Input dim: %s. Output dim: %s" % (self.input_dimensionality, self.output_dimensionality))
+            # the loop below is equivalent to the following:
+            # P = reduced_representations.dot(input_data.T.tocsc())
+            # P *= (1 - self.noise)
+            #   AND
+            # bias = csc_matrix(np.ones((1, num_documents)))
+            # input_data = vstack((input_data, bias)).tocsc()
+            # scatter = input_data.dot(input_data.T)
 
-        corruption = csc_matrix(np.ones((dimensionality + 1, 1))) * (1 - self.noise)
+            # We're constucting P and scatter by only iterating through the corpus once.
+            ln.debug("building P and scatter matrix.")
+            P = np.zeros((self.output_dimensionality, self.input_dimensionality + 1), dtype=float)
+            for input_chunk, reduced_chunk in izip(input_data, reduced_representations):
+                chunksize = input_chunk.shape[1]
+                bias = np.ones((1, chunksize))
+                input_chunk = vstack((input_chunk, bias))
+                P += reduced_chunk.dot(input_chunk.T)
+                scatter += input_chunk.dot(input_chunk.T)
+
+
+        else:
+            ln.debug("Input/Output dim %s" % self.input_dimensionality)
+            ln.debug("building scatter matrix from temp files. P will be built in-memory.")
+            # In this case, only construct scatter in this strange way, since P is constructed from scatter alone
+            for input_chunk in input_data:
+                ln.debug("input_chunk shape: (%s,%s)" % input_chunk.shape)
+                chunksize = input_chunk.shape[1]
+
+                bias = np.ones((1, chunksize))
+                input_chunk = vstack((input_chunk, bias))
+                scatter += input_chunk.dot(input_chunk.T)
+                del input_chunk
+
+            # construct P in memory
+            ln.debug("constructing P")
+            P = scatter[:-1, :]
+            P *= (1 - self.noise)
+
+        #ln.debug("scatter has shape (%s, %s), P has shape (%s, %s)" % (scatter.shape[0], scatter.shape[1], P.shape[0],P.shape[1]))
+
+        P[:, self.input_dimensionality] *= (1.0 / (1 - self.noise))
+
+        corruption = csc_matrix(np.ones((self.input_dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
+        #ln.debug("corruption: %s, %s" % corruption.shape)
 
         # this is a hacky translation of the original Matlab code, to avoid allocating a big (d+1)x(d+1) matrix
         # instead of element-wise multiplying the matrices, we handle the corresponding areas individually
@@ -42,28 +87,24 @@ class mDA(object):
         # corrupt everything
         Q = scatter * (1-self.noise)**2
         # partially undo corruption to values in (d+1,:)
-        Q[dimensionality] = scatter[dimensionality] * (1.0/(1-self.noise))
+        Q[self.input_dimensionality] = scatter[self.input_dimensionality] * (1.0/(1-self.noise))
         # partially undo corruption to values in (:,d+1)
-        Q[:, dimensionality] = scatter[:, dimensionality] * (1.0/(1-self.noise))
+        Q[:, self.input_dimensionality] = scatter[:, self.input_dimensionality] * (1.0/(1-self.noise))
         # undo corruption of (-1, -1)
         Q[-1, -1] = scatter[-1, -1] * (1.0/(1-self.noise)**2)
 
         # replace the diagonal (this is according to the original code again)
-        idxs = range(dimensionality + 1)
-        Q[idxs, idxs] = corruption.T.multiply(scatter[idxs, idxs])
+        idxs = range(self.input_dimensionality + 1)
+        #ln.debug("scatter[idxs,idxs] is %s, %s" % scatter[idxs, idxs].shape)
+        #ln.debug("Q[idxs,idxs] is %s, %s" % Q[idxs, idxs].shape)
+        #ln.debug("corruption.T is %s, %s" % corruption.T.shape)
+        #ln.debug("scatter: %s, Q: %s, corruption:%s" % (scatter.__repr__(), Q.__repr__(), corruption.__repr__()))
+        Q[idxs, idxs] = np.squeeze(np.asarray(np.multiply(corruption.todense().T, (scatter[idxs, idxs]))))
 
-        # Constructing P
-        if self.reduce_dimensionality:
-            P = reduced_representations.dot(input_data.T.tocsc()) * (1 - self.noise)
-            P[:, dimensionality] *= (1.0 / (1 - self.noise))
-
-        else:
-            P = scatter.tocsr()[:-1, :].tocsc()
-            P *= (1 - self.noise)
-            P[:, dimensionality] *= (1.0 / (1 - self.noise))
-
-        reg = sparse.eye(dimensionality + 1, format="csc").multiply(self.lambda_)
+        reg = sparse.eye(self.input_dimensionality + 1, format="csc").multiply(self.lambda_)
         reg[-1, -1] = 0
+
+        # W is going to be dx(d+1) (or rx(d+1) for high dimensions)
 
         # we need to solve W = P * Q^-1
         # Q is symmetric, so Q = Q^T
@@ -71,59 +112,21 @@ class mDA(object):
         # (WQ)^T = P^T
         # Q^T W^T = P^T
         # Q W^T = P^T
-
-        # basically, self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-
-        Qreg = (Q + reg).todense()  # This is based on Q and reg, and is therefore symmetric
-        PT = csc_matrix(P.T)
-        PT.sort_indices()
-
-        # Solving for W
-        # W is going to be dx(d+1) (or rx(d+1) for high dimensions)
-        self.weights = np.zeros((0, dimensionality + 1))
-
-        if self.reduce_dimensionality:
-            num_batches = 1
-        else:
-            # TODO choose a sensible value automatically
-            num_batches = 3
-
-        # we solve the system in batched to possibly conserve some memory for high dimensional data
-        batch_size = int(np.ceil(float(output_dim) / num_batches))
-        for batch_idx in range(num_batches):
-            start = batch_idx * batch_size
-            end = int(min((batch_idx + 1) * batch_size, output_dim))
-            column_idxs = range(start, end)
-
-            # PT is (d+1) x r
-            pt_columns = PT[:, column_idxs].todense()
-
-            #ln.debug("Solving (Q+reg)W^T = columns. Columns is %s by %s" % pt_columns.shape)
-            weights = np.linalg.lstsq(Qreg, pt_columns)[0].T
-
-            self.weights = np.vstack([self.weights, weights])
-
-        ln.info("finished training.")
+        # thus, self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
+        ln.debug("solving for weights..")
+        # Qreg = (Q + reg) # This is based on Q and reg, and is therefore symmetric
+        self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
 
         del P
         del Q
         del scatter
         del bias
         del corruption
-        
-        if return_hidden:
-            ln.debug("Computing and returning hidden representations.")
 
-            if self.reduce_dimensionality:
-                hidden_representations = self.weights.dot(input_data.todense())
-            else:  # TODO: change this to sparse when we're not doing dimensional reduction
-                hidden_representations = self.weights.dot(input_data.todense())
-                hidden_representations = np.tanh(hidden_representations)
-            del input_data
-            return hidden_representations
-
+        ln.info("finished training.")
 
     def get_hidden_representations(self, input_data):
+        # won't work with streams, but also shouldn't need to.
         dimensionality, num_documents = input_data.shape
 
         bias = csc_matrix(np.ones((1, num_documents)))
@@ -139,3 +142,5 @@ class mDA(object):
 
         return hidden_representations
 
+    def __getitem__(self, item):
+        return self.get_hidden_representations(item)
