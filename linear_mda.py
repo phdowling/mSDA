@@ -6,7 +6,8 @@ ln = logging.getLogger("mDA")
 ln.setLevel(logging.DEBUG)
 
 from scipy import sparse
-from scipy.sparse import hstack, vstack, csc_matrix, csr_matrix
+from scipy.sparse import vstack, csc_matrix, csr_matrix
+
 
 from itertools import izip
 
@@ -23,7 +24,7 @@ class mDA(object):
         self.weights = None
 
     def train(self, input_data, reduced_representations=None):
-        ln.info("mDA beginning training.")
+        ln.info("mDA beginning training")
 
         # DIMENSIONS OVERVIEW
         # scatter: always (d+1) x (d+1)
@@ -60,26 +61,26 @@ class mDA(object):
             ln.debug("building scatter matrix from temp files. P will be built in-memory.")
             # In this case, only construct scatter in this strange way, since P is constructed from scatter alone
             for input_chunk in input_data:
-                ln.debug("input_chunk shape: (%s,%s)" % input_chunk.shape)
                 chunksize = input_chunk.shape[1]
 
                 bias = np.ones((1, chunksize))
-                input_chunk = vstack((input_chunk, bias))
-                scatter += input_chunk.dot(input_chunk.T)
+                input_chunk = np.vstack((input_chunk, bias))
+                input_chunkT = input_chunk.T.copy()
+                _res = input_chunk.dot(input_chunkT)
+                scatter += _res
                 del input_chunk
+                del input_chunkT
 
+            scatter = np.matrix(scatter)
             # construct P in memory
             ln.debug("constructing P")
             P = scatter[:-1, :]
             P *= (1 - self.noise)
 
-        #ln.debug("scatter has shape (%s, %s), P has shape (%s, %s)" % (scatter.shape[0], scatter.shape[1], P.shape[0],P.shape[1]))
-
         P[:, self.input_dimensionality] *= (1.0 / (1 - self.noise))
 
         corruption = csc_matrix(np.ones((self.input_dimensionality + 1, 1))) * (1 - self.noise)
         corruption[-1] = 1
-        #ln.debug("corruption: %s, %s" % corruption.shape)
 
         # this is a hacky translation of the original Matlab code, to avoid allocating a big (d+1)x(d+1) matrix
         # instead of element-wise multiplying the matrices, we handle the corresponding areas individually
@@ -95,13 +96,10 @@ class mDA(object):
 
         # replace the diagonal (this is according to the original code again)
         idxs = range(self.input_dimensionality + 1)
-        #ln.debug("scatter[idxs,idxs] is %s, %s" % scatter[idxs, idxs].shape)
-        #ln.debug("Q[idxs,idxs] is %s, %s" % Q[idxs, idxs].shape)
-        #ln.debug("corruption.T is %s, %s" % corruption.T.shape)
-        #ln.debug("scatter: %s, Q: %s, corruption:%s" % (scatter.__repr__(), Q.__repr__(), corruption.__repr__()))
         Q[idxs, idxs] = np.squeeze(np.asarray(np.multiply(corruption.todense().T, (scatter[idxs, idxs]))))
 
         reg = sparse.eye(self.input_dimensionality + 1, format="csc").multiply(self.lambda_)
+
         reg[-1, -1] = 0
 
         # W is going to be dx(d+1) (or rx(d+1) for high dimensions)
@@ -113,8 +111,7 @@ class mDA(object):
         # Q^T W^T = P^T
         # Q W^T = P^T
         # thus, self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-        ln.debug("solving for weights..")
-        # Qreg = (Q + reg) # This is based on Q and reg, and is therefore symmetric
+        ln.debug("solving for weights...")
         self.weights = np.linalg.lstsq((Q + reg), P.T)[0].T
 
         del P
@@ -123,7 +120,7 @@ class mDA(object):
         del bias
         del corruption
 
-        ln.info("finished training.")
+        ln.debug("mDA training completed.")
 
     def get_hidden_representations(self, input_data):
         # won't work with streams, but also shouldn't need to.

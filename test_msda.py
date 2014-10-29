@@ -1,163 +1,135 @@
 __author__ = 'dowling'
+# This test class has a lot of dependencies, mainly because I haven't had time to rewrite it in a cleaner way yet.
+# However, using mSDA only requires numpy and scipy as a dependency.
 
-from bs4 import BeautifulSoup
 import logging
-ln = logging.getLogger("mSDA")
-ln.setLevel(logging.DEBUG)
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(name)-18s: %(message)s', level=logging.DEBUG)
+ln = logging.getLogger("test_model")
 
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(name)-18s: %(message)s')
+from nltk.corpus import brown
+from pattern.en import wordnet
+from scipy.spatial.distance import cosine
+import matutils
 
-from stopwords import stopwords
+from linear_msda import mSDAhd, mSDA
+
+import random
+
+from gensim.corpora.dictionary import Dictionary
 
 from stemming.porter2 import stem
 import string
 
-import gensim
 
-from linear_msda import mSDA, mSDAhd
+class Preprocessor():
+    def __init__(self, dictionary, use_stemming=False):
+        self.use_stemming = use_stemming
+        self.dictionary = dictionary
 
-import os
-
-import numpy as np
-
-from sklearn.metrics.pairwise import cosine_similarity
-
-class Reuters21578DataSource():
-    def __init__(self):
-        self.reutersFiles = []
-        self.loadFiles = ["reuters21578/reut2-00%s.sgm" % str(num) for num in range(10)] + \
-                         ["reuters21578/reut2-0%s.sgm" % str(num) for num in range(10, 22)]
-        self.updateCount = 0
-        self.updating = False
-
-    def getDocuments(self):
-        return []
-
-    def updateAndGetDocuments(self):  # pretend we're downloading the rest of the corpus
-        self.updating = True
-        try:
-            filename = self.loadFiles[self.updateCount]
-        except:
-            return []
-        count = 0
-        documents = []
-        with open(filename, "r") as f:
-            data = f.read()
-            soup = BeautifulSoup(data)
-            contents = soup.find_all("text")
-            for cont in contents:
-                count += 1
-                d = Document(cont.text)
-                d.sourceType = self.__class__.__name__
-                documents.append(d)
-        ln.info("on updating, got %s documents from file %s." % (count, filename))
-        self.updateCount += 1
-        self.updating = False
-        return documents
-
-
-class Document(object):
-    def __init__(self, text):
-        self.text = text
-        self.id = None
-        self.preprocessed = []
-        self.vectors = dict()
-
-    def __iter__(self):
-        for id_, token in self.preprocessed:
-            yield token
-
-    def __len__(self):
-        return len(self.preprocessed)
-
-
-
-# SETTINGS
-STOPWORDS = set(stopwords)
-
-
-class TokenizingPorter2Stemmer():
-    def __init__(self, stopWords=STOPWORDS):
-        self.stopWords = set(map(stem, stopWords))
-        #self.stopWords = set(self.stemWords(self.stopWords))
-
-    def preprocess(self, doc, dictionary, allow_update=True):
-        if isinstance(doc, str):
-            text = doc
-        else:
-            text = doc.text[:]
+    def preprocess(self, text, allow_update=True, return_bow=True):
         text = text.encode("ascii", "ignore").lower()
-        text = text.split()
-        text = self.removeHTML(text)
-        text = self.removePunctuation(text)
-        #text = self.stemWords(text)
-        text = self.removeNonsense(text)
-        text = self.removeStopWords(set(text))
-        text = sorted(text, key=lambda x: -len(x))
-        text = dictionary.doc2bow(text, allow_update=allow_update)
+        text = text.strip().split()
+        text = [word.strip() for word in text]
+
+        text = [term.translate(string.maketrans("", ""), string.punctuation) for term in text]
+        if self.use_stemming:
+            text = map(stem, text)
+
+        if return_bow:
+            text = self.dictionary.doc2bow(text, allow_update=allow_update)
 
         return text
-        #else:
-        #    doc.preprocessed = text
 
-    def removeHTML(self, text):
-        for term in text[:]:
-            if term.startswith("<") and term.endswith(">"):
-                text.remove(term)
-        return text
+def cosine_similarity(x, y):
+    c = 1-cosine(x, y)
+    if c < 0.0:
+        return 0.0
+    if c > 1.0:
+        return 1.0
+    else:
+        return c
 
-    def removeNonsense(self, text):
-        def isNonsense(term):
-            if term[:4] == "http" or term[:4] == "href" or term[:7] == "srchttp":
-                return True
-            if any((x in term for x in "1234567890")):
-                return True
-            if len(term) > 50:
-                    return True
-            return False
-        return [term for term in text if not isNonsense(term)]
+class mSDAWrapper(object):
+    def __init__(self, filename, preprocessor):
+        self.preprocessor = preprocessor
+        self.model = mSDAhd.load(filename)
+        self.output_dimensionality = self.model.output_dimensionality * ((self.model.num_layers + 1)
+                                                                         if self.model.concatenate_output else 1)
 
-    def removePunctuation(self, text):
-        return [term.translate(string.maketrans("", ""), string.punctuation) for term in text]
+    def compute_similarity(self, phrase1, phrase2):
+        return cosine_similarity(matutils.sparse2full(self[phrase1], self.output_dimensionality),
+                                 matutils.sparse2full(self[phrase2], self.output_dimensionality))
 
-    def removeStopWords(self, textSet):
-        return textSet - self.stopWords
+    def __getitem__(self, item):
+        prep = self.preprocessor.preprocess(item, allow_update=False)
+        return self.model[prep]
 
-    def stemWords(self, text):
-        return map(stem, text)
+    @classmethod
+    def train(cls, documents, dimensions, id2word, params):
+        msdawrap = object.__new__(mSDAWrapper)
+        msdawrap.model = mSDAhd(dimensions, id2word, noise=params["noise"], num_layers=params["num_layers"])
+        msdawrap.model.train(documents, chunksize=10000)
+        return msdawrap
 
-ln.debug("load corpus and preprocess")
-data = Reuters21578DataSource()
-preprocessor = TokenizingPorter2Stemmer()
-dictionary = gensim.corpora.dictionary.Dictionary()
-all_preprocessed = []
-for _ in range(30):
-    docs = [preprocessor.preprocess(doc, dictionary) for doc in data.updateAndGetDocuments()]
-    all_preprocessed += docs
-
-ln.debug("got %s documents " % len(all_preprocessed))
-ln.debug("dictionary has %s unique terms" % len(dictionary))
-
-ln.debug("find most frequent terms")
-most_frequent_ids = dictionary.dfs.items()[:]
-most_frequent_ids.sort(key=lambda (key, val): -val)
-
-inv_map = {v: k for k, v in dictionary.token2id.items()}
-k = 3000
-top_k = [k for k, v in most_frequent_ids[:k]]
-
-#print [inv_map[k] for k in top_k]
-
-ln.debug("train mSDA")
-msda = mSDAhd(top_k, len(dictionary), noise=0.5, num_layers=5)
-#msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(dictionary))
-
-representations = msda.train(all_preprocessed, return_hidden=True)
-msda.save("reuters21578_3000dim_nostem")
+    def save(self, fname):
+        self.model.save(fname)
 
 
-def get_reps(string1):
-    bow1 = preprocessor.preprocess(string1, dictionary, allow_update=False)
-    reps1 = msda.get_hidden_representations([bow1])
-    return reps1
+ln.info("preprocessing corpus")
+dictionary = Dictionary()
 
+preprocessor = Preprocessor(use_stemming=False, dictionary=dictionary)
+
+corpusname = "brown"
+corpus = [preprocessor.preprocess(" ".join(text), return_bow=True) for text in brown.sents()]
+preprocessor.dictionary.filter_extremes(15, 0.1, 30000)
+corpus = [preprocessor.preprocess(" ".join(text), allow_update=False, return_bow=True) for text in brown.sents()]
+
+
+dimensions = 2000
+params = [{"num_layers": 5, "noise": 0.7},
+          {"num_layers": 3, "noise": 0.3}][0]
+
+ln.info("training mSDA with %s dimensions. params: %s" % (dimensions, params))
+model = mSDAWrapper.train(corpus, dimensions, dictionary, params)
+
+paramstring = "_".join(["%s-%s" % (k, v) for k, v in params.items()])
+savestring = "mSDA_%s_%s_" % (corpusname, paramstring)
+model.save(savestring)
+msda_wrapper = mSDAWrapper(savestring, preprocessor)
+
+def get_synonyms(word):
+    return [synset.synonyms for synset in wordnet.synsets(word)]
+
+# run sanity checks
+def generate_synonyms():
+    synonyms = set()
+
+    for termid in dictionary:
+        term = dictionary[termid]
+        if not term:
+            continue
+        synsets = get_synonyms(term)
+        synset = [item for sublist in synsets for item in sublist]  # flatten
+        for other_term in synset:
+            other_term = " ".join(preprocessor.preprocess(other_term, allow_update=False, return_bow=False))
+            if other_term != term:
+                if other_term in dictionary.token2id:
+                    synonyms.add((term, other_term))
+    noise = zip([dictionary[random.randrange(len(dictionary))] for _ in range(len(synonyms))],
+                [dictionary[random.randrange(len(dictionary))] for _ in range(len(synonyms))])
+    return synonyms, noise
+
+
+syns, noise = generate_synonyms()
+sum_ = 0
+for (term, syn) in syns:
+    sum_ += msda_wrapper.compute_similarity(term, syn)
+
+print "average synonym pair similarity: ", sum_ / len(syns)
+
+sum_ = 0
+for (term, ot) in noise:
+    sum_ += msda_wrapper.compute_similarity(term, ot)
+
+print "average noise pair similarity: ", sum_ / len(noise)

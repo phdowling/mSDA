@@ -5,12 +5,17 @@ import numpy as np
 ln = logging.getLogger("mSDA")
 ln.setLevel(logging.DEBUG)
 
-from models.impl.msda.linear_mda import mDA
+from linear_mda import mDA
 
-from models.impl.gensim import utils, matutils
+
+import matutils
+import utils
 from scipy.sparse import csc_matrix, lil_matrix
 
 from tempfile import TemporaryFile
+
+
+# MAX_TEMP_INMEM = 1024 * 500
 
 def convert(sparse_bow, dimensionality):
     dense = np.zeros((dimensionality, 1))
@@ -58,6 +63,7 @@ class TempFileStream(object):
         for temp_file in self.tempfiles:
             temp_file.seek(0)
             matrix = np.load(temp_file)
+            matrix = np.matrix(matrix)
             yield matrix
             del matrix
 
@@ -66,6 +72,7 @@ class mSDA(object):
     (Linear) marginalized Stacked Denoising Autoencoder.
     """
     def __init__(self, noise, num_layers, input_dimensionality):
+        ln.warn("Initializing mSDA. I haven't really tested this class yet, it probably has bugs! ")
         self._msda = _mSDA(noise, num_layers, input_dimensionality)
         self.input_dimensionality = input_dimensionality
 
@@ -79,8 +86,8 @@ class mSDA(object):
         ln.debug("Training done.")
 
     def get_hidden_representations(self, input_data):
-        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
-        return self._msda.get_hidden_representations(acc)
+        input_data = np.vstack([matutils.sparse2full(vector, self.input_dimensionality) for vector in input_data]).T
+        return self._msda.get_hidden_representations(input_data)
 
     def __getitem__(self, bow):
         is_corpus, corpus = utils.is_corpus(bow)
@@ -102,7 +109,9 @@ class mSDAhd(object):
     (Linear) marginalized Stacked Denoising Autoencoder with dimensionality reduction, a.k.a. dense Cohort of Terms (dCoT).
     Use this class for creating semantic models of textual data.
     """
-    def __init__(self, dimensions, id2word, noise=0.5, num_layers=5, input_dim=None):
+    def __init__(self, dimensions, id2word, noise=0.5, num_layers=5, input_dim=None, concatenate_output=True):
+        self.num_layers = num_layers
+        self.concatenate_output = concatenate_output
         if id2word is None:
             assert input_dim
             ln.warn("Initialized mSDAhd without id2word - not selecting prototype ids, no training possible.")
@@ -129,18 +138,19 @@ class mSDAhd(object):
 
         ln.debug("Training done.")
 
-    def get_hidden_representations(self, input_data, seperate=False):
-        acc = convert_to_sparse_matrix(input_data, self.input_dimensionality)
-        reps = self._msda.get_hidden_representations(acc, seperate=seperate)
+    def get_hidden_representations(self, input_data, return_sparse=True, concatenate=True):
+        input_data = np.vstack([matutils.sparse2full(vector, self.input_dimensionality) for vector in input_data]).T
 
-        return reps
+        return self._msda.get_hidden_representations(input_data, return_sparse=return_sparse, concatenate=concatenate)
 
     def __getitem__(self, bow):
         is_corpus, corpus = utils.is_corpus(bow)
         if is_corpus:
-            return self.get_hidden_representations(bow, seperate=True)
+            #ln.debug("input is corpus")
+            return self.get_hidden_representations(bow, return_sparse=True, concatenate=self.concatenate_output)
         else:
-            return self.get_hidden_representations([bow], seperate=True)[0]
+            #ln.debug("input is vector")
+            return self.get_hidden_representations([bow], return_sparse=True, concatenate=self.concatenate_output)[0]
 
     def save(self, filename):
         self._msda.save(filename)
@@ -186,16 +196,15 @@ class _mSDA(object):
             if self.randomized_indices is None:
                 self.randomized_indices = np.random.permutation(self.input_dim)
 
-            ln.debug("Performing initial dimensional reduction with %s folds" % (
-                int(np.ceil(float(self.input_dim) / self.output_dim))))
+            num_folds = int(np.ceil(float(self.input_dim) / self.output_dim))
+            ln.info("Performing initial dimensional reduction with %s folds" % num_folds)
 
-            for batch in range(int(np.ceil(float(self.input_dim)/self.output_dim))):
+            for batch in range(num_folds):
                 indices = self.randomized_indices[batch*self.output_dim: (batch + 1)*self.output_dim]
 
-                ln.debug("Initial dimensional reduction on fold %s.." % batch)
+                ln.info("Initial dimensional reduction on fold %s/%s.." % (batch+1, num_folds))
 
                 if len(self.hdlayer) <= batch:
-
                     mda = mDA(self.noise, self.lambda_, input_dimensionality=len(indices),
                               output_dimensionality=self.output_dim)
                     self.hdlayer.append(mda)
@@ -209,64 +218,85 @@ class _mSDA(object):
                 def convert_chunk_and_update_average(chunk_, chunk_no_):
                     if batch == 0:
                         temp_file = TemporaryFile()
+                        #temp_file = SpooledTemporaryFile(max_size=MAX_TEMP_INMEM)
                         current_representation_chunks.append(temp_file)
-                        ln.debug("created new tempfile, initializing avg chunk. first index batch, corpus chunk %s" % chunk_no)
+
                         running_average = mda[chunk_]
                     else:
                         temp_file = current_representation_chunks[chunk_no_]
                         temp_file.seek(0)
                         running_average = np.load(temp_file)
                         hidden = mda[chunk_]
-                        running_average += (1.0 / batch + 1) * (hidden - running_average)
+                        running_average += (1.0 / (batch + 1)) * (hidden - running_average)
                     np.save(temp_file, running_average)
-                    ln.debug("saved updated avg, corpus chunk %s." % chunk_no)
+                    #ln.debug("saved updated avg, corpus chunk %s." % chunk_no)
 
+                ln.info("Now updating hidden representations for corpus.")
+                total_processed = 0
                 for chunk_no, chunk in enumerate(indices_filtered_input):
                     convert_chunk_and_update_average(chunk, chunk_no)
+                    total_processed += chunk.shape[1]
+                    ln.info("Fold %s/%s: %s documents processed." % (batch+1, num_folds, total_processed))
 
             # apply tanh element wise
-            ln.debug("Applying tanh to reduction layer chunks..")
+            ln.info("Applying tanh to all reduction layer chunks..")
+            total_processed = 0
             for chunk_file in current_representation_chunks:
                 chunk_file.seek(0)
                 running = np.load(chunk_file)
                 running = np.tanh(running)
+                total_processed += running.shape[1]
+                ln.info("tanh: %s documents processed." % total_processed)
                 np.save(chunk_file, running)
+                del running
 
             current_representation = TempFileStream(current_representation_chunks)
 
         else:
             current_representation = FilteringChunkDocumentStream(input_data, self.input_dim, chunksize=chunksize)
-
-        ln.debug("Now training %s layers." % (len(self.layers),))
+        if self.highdimen:
+            ln.info("Layer 1 finished training.")
+        ln.info("Beginning training on %s layers." % (("additional %s" % len(self.layers)) if self.highdimen else
+                                                      (len(self.layers) + 1),))
         for layer_num, layer in enumerate(self.layers):
             layer.train(current_representation)
 
             # we compute the hidden representation for each chunk and overwrite its previous representation
             def convert_chunk_and_replace_representation(chunk_, chunk_no_):
                 if not self.highdimen and layer_num == 0:
+                    #current_representation_chunks.append(SpooledTemporaryFile(max_size=MAX_TEMP_INMEM))
                     current_representation_chunks.append(TemporaryFile())
                 temp_file = current_representation_chunks[chunk_no_]
                 temp_file.seek(0)
                 hidden = layer[chunk_]
                 np.save(temp_file, hidden)
 
-            for chunk_no, chunk in enumerate(current_representation):
-                convert_chunk_and_replace_representation(chunk, chunk_no)
+            if layer_num != len(self.layers) - 1:  # don't generate representations after last layer is trained
+                ln.info("Computing new hidden representations...")
+                total_processed = 0
+                for chunk_no, chunk in enumerate(current_representation):
+                    convert_chunk_and_replace_representation(chunk, chunk_no)
+                    total_processed += chunk.shape[1]
+                    ln.info("Layer %s/%s: %s documents processed." % ((layer_num + 2) if self.highdimen else
+                                                                      (layer_num + 1),
+                                                                      (len(self.layers) + 1) if self.highdimen else
+                                                                      len(self.layers), total_processed))
 
             if not self.highdimen and layer_num == 0:
                 current_representation = TempFileStream(current_representation_chunks)
 
-            ln.debug("trained layer %s" % (layer_num + 1,))
+            ln.info("trained layer %s/%s" % ((layer_num + 2) if self.highdimen else (layer_num + 1),
+                                            (len(self.layers) + 1) if self.highdimen else len(self.layers)))
 
         del current_representation
         for representation_file in current_representation_chunks:
             representation_file.close()
         ln.info("mSDA finished training.")
 
-    def get_hidden_representations(self, input_data, seperate=True, concatenate=True):
+    def get_hidden_representations(self, input_data, return_sparse=True, concatenate=True):
         """
         convert a sparse matrix of documents to their mSDA representation.
-        if seperate is true, return the documents in list form
+        if return_sparse is true, return the documents in list form, otherwise return a dense matrix
         if concatenate is true, the representation of each document is the concatenation of each layer output
             otherwise, use the last layers' output only
         """
@@ -283,7 +313,7 @@ class _mSDA(object):
                 hidden = mda[input_data[indices, :]]
 
                 # running average
-                current_representation += (1.0 / batch + 1) * (hidden - current_representation)
+                current_representation += (1.0 / (batch + 1)) * (hidden - current_representation)
 
             #current_representation = current_representation / np.ceil(dimensionality/self.output_dim)
             current_representation = np.tanh(current_representation)
@@ -303,11 +333,11 @@ class _mSDA(object):
             representations = np.vstack(representations)
         else:
             representations = current_representation
-
-        if seperate:
-            return matutils.Dense2Corpus([column for column in representations.T])
+        #ln.debug("representation is %s" % representations)
+        if return_sparse:
+            return [matutils.full2sparse(column) for column in np.asarray(representations).T]
         else:
-            return representations
+            return np.asarray(representations)
 
 
 
@@ -331,7 +361,7 @@ class _mSDA(object):
             else:
                 f.write("highdimen=False\n")
                 f.write("num_layers=%s\n" % (len(self.layers),))
-            f.write("noise=%s" % self.noise)
+            f.write("noise=%s\n" % self.noise)
             f.write("input_dim=%s" % self.input_dim)
 
         if self.highdimen:
@@ -373,9 +403,8 @@ class _mSDA(object):
             layers.append(np.load(filename_prefix + "_layer%s.npy" % layeridx))
 
         # if HD: load the W matrices for each block in the first layer
-        blocks = []
-        randomized_indices = None
         if highdimen:
+            blocks = []
             randomized_indices = np.load(filename_prefix + "_randidx.npy")
 
             output_dim, _ = layers[0].shape
@@ -383,8 +412,7 @@ class _mSDA(object):
             for blockidx in range(num_blocks):
                 blocks.append(np.load(filename_prefix + "_block%s.npy" % blockidx))
 
-        # initialize mSDA
-        if highdimen:
+            # initialize mSDA
             msda = mSDAhd(output_dim, None, noise=noise, num_layers=num_layers, input_dim=input_dim)
 
             for block in blocks:
@@ -394,7 +422,6 @@ class _mSDA(object):
                 msda._msda.hdlayer.append(mda)
             msda._msda.randomized_indices = randomized_indices
         else:
-
             msda = mSDA(noise=noise, num_layers=num_layers, input_dimensionality=input_dim)
 
         # assign layers with the loaded W matrices
