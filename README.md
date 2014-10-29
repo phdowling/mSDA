@@ -12,11 +12,11 @@ Example usage with dimensional reduction on text:
 ```python
 from linear_msda import mSDAhd
 
-
-# load your corpus, should be bag of words format (as in e.g. gensim)
-
 # initialize mSDA / dCoT
 msda = mSDAhd(dimensions, id2word, noise=noise, num_layers=num_layers)
+
+# load your corpus, should be bag of words format (as in e.g. gensim)
+preprocessed_bow_documents = MmCorpus("test_corpus.mm")
 
 # train on our corpus, generating the hidden representations
 msda.train(preprocessed_bow_documents, chunksize=10000)
