@@ -9,13 +9,14 @@ ln = logging.getLogger("test_model")
 from nltk.corpus import brown
 from pattern.en import wordnet
 from scipy.spatial.distance import cosine
-import matutils
 
 from linear_msda import mSDAhd, mSDA
 
 import random
 
 from gensim.corpora.dictionary import Dictionary
+from gensim.corpora.mmcorpus import MmCorpus
+from gensim import matutils
 
 from stemming.porter2 import stem
 import string
@@ -84,6 +85,10 @@ corpusname = "brown"
 corpus = [preprocessor.preprocess(" ".join(text), return_bow=True) for text in brown.sents()]
 preprocessor.dictionary.filter_extremes(15, 0.1, 30000)
 corpus = [preprocessor.preprocess(" ".join(text), allow_update=False, return_bow=True) for text in brown.sents()]
+
+ln.debug("saving/loading corpus")
+save = MmCorpus.serialize("test.mm", corpus)
+corpus = MmCorpus("test.mm")
 
 
 dimensions = 2000
