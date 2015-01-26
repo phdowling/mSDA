@@ -1,7 +1,6 @@
 __author__ = 'dowling'
 import logging
 import numpy as np
-from scipy.sparse import csc_matrix, lil_matrix
 
 ln = logging.getLogger("mSDA")
 ln.setLevel(logging.DEBUG)
@@ -9,10 +8,12 @@ ln.setLevel(logging.DEBUG)
 from mda_layer import mDALayer
 
 from gensim import utils, matutils
+
+from scipy.sparse import csc_matrix, lil_matrix
+
 from gensim.corpora.mmcorpus import MmCorpus
 
 import os
-
 
 def convert(sparse_bow, dimensionality):
     dense = np.zeros((dimensionality, 1))
@@ -52,6 +53,13 @@ class mSDA(object):
         self.reduction_layer = reduction_layer
         self.mda_layers = [mDALayer(noise, self.lambda_, output_dimensionality) for _ in range(num_layers - 1)]
 
+    def generate_streamed_csc_from_corpus(self, corpus, dimensions, chunksize):
+        for chunk in utils.grouper(corpus, chunksize):
+            chunk_csc = matutils.corpus2csc(chunk, dimensions)
+            transformed = self.reduction_layer.__getitem__(chunk_csc, numpy_input=True, numpy_output=True,
+                                                           chunksize=chunksize)
+            yield transformed
+
     def train(self, corpus, chunksize=10000, use_temp_files=True):
         """
         train the underlying linear mappings.
@@ -62,7 +70,7 @@ class mSDA(object):
         require a significant amount of disk space. Using temp files will strongly speed up training, especially as the
         number of layers increases.
         """
-        ln.info("Training mSDA with %s layers. ")
+        ln.info("Training mSDA with %s layers.", len(self.mda_layers) + 1)
         if not use_temp_files:
             ln.warn("Training without temporary files. May take a long time!")
             self.reduction_layer.train(corpus, chunksize=chunksize)
@@ -84,33 +92,35 @@ class mSDA(object):
             ln.info("Beginning training on %s layers." % (len(self.mda_layers) + 1))
             self.reduction_layer.train(corpus, chunksize=chunksize)
 
-            # serializing intermediate representation
-            MmCorpus.serialize(".msda_intermediate.mm", self.reduction_layer[corpus], progress_cnt=chunksize)
-
-            # load corpus to train next layer
+            # serialize intermediate representation, load again (streamed) to train next layer
+            ln.debug("calling __getitem__")
+            transformed = self.reduction_layer.__getitem__(corpus, chunksize=chunksize)
+            ln.debug("serializing corpus")
+            MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
             current_representation = MmCorpus(".msda_intermediate.mm")
 
             for layer_num, layer in enumerate(self.mda_layers):
                 layer.train(current_representation, chunksize=chunksize)
-                os.remove(".msda_intermediate.mm")
-                os.remove(".msda_intermediate.mm.index")
 
                 if layer_num < len(self.mda_layers) - 1:
-                    MmCorpus.serialize(".msda_intermediate.mm", layer[current_representation], progress_cnt=chunksize)
+                    transformed = self.reduction_layer.__getitem__(current_representation, chunksize=chunksize)
+                    os.remove(".msda_intermediate.mm")
+                    os.remove(".msda_intermediate.mm.index")
+                    MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
                     current_representation = MmCorpus(".msda_intermediate.mm")
 
         ln.info("mSDA finished training.")
 
-    def _get_hidden_representations(self, input_data):
+    def _get_hidden_representations(self, input_data, chunksize):
         """
         convert a numpy matrix of documents to their mSDA representation.
         if return_sparse is true, return the documents in list form, otherwise return a dense matrix
         if concatenate is true, the representation of each document is the concatenation of each layer output
             otherwise, use the last layers' output only
         """
-        hidden = self.reduction_layer.__getitem__(input_data, numpy_input=True, numpy_output=True)
+        hidden = self.reduction_layer.__getitem__(input_data, numpy_input=True, numpy_output=True, chunksize=chunksize)
         for layer in self.mda_layers:
-            hidden = layer.__getitem__(hidden, numpy_input=True, numpy_output=True)
+            hidden = layer.__getitem__(hidden, numpy_input=True, numpy_output=True, chunksize=chunksize)
         return hidden
 
     def __getitem__(self, bow, chunksize=10000):
@@ -120,22 +130,25 @@ class mSDA(object):
 
         if chunksize:
             def transformed_corpus():
-                for chunk_no, doc_chunk in utils.grouper(bow, chunksize):
+                for doc_chunk in utils.grouper(bow, chunksize):
                     chunk = matutils.corpus2dense(doc_chunk, self.input_dimensionality)
-                    hidden = self._get_hidden_representations(chunk)
+                    hidden = self._get_hidden_representations(chunk, chunksize)
                     for column in hidden.T:
-                        yield matutils.any2sparse(column)
+                        yield matutils.dense2vec(column.T)
 
         else:
             def transformed_corpus():
                 for doc in bow:
                     yield matutils.any2sparse(
-                        self._get_hidden_representations(matutils.corpus2dense(doc, self.input_dimensionality)))
+                        self._get_hidden_representations(matutils.corpus2dense(doc, self.input_dimensionality),
+                                                         chunksize))
 
         if not is_corpus:
             return list(transformed_corpus()).pop()
         else:
             return transformed_corpus()
+
+
 
     def save(self, filename_prefix):
         # need to save:
@@ -196,7 +209,7 @@ class mSDA(object):
         randomized_indices = np.load(filename_prefix + "_randidx.npy")
 
         reduction_layer_blocks = []
-        num_blocks = int(np.ceil(float(len(randomized_indices))/output_dimensionality))
+        num_blocks = len(randomized_indices)
         for blockidx in range(num_blocks):
             reduction_layer_blocks.append(np.load(filename_prefix + "_block%s.npy" % blockidx))
 
@@ -212,6 +225,8 @@ class mSDA(object):
 
         for layer_num, mda_layer in enumerate(msda.mda_layers):
             mda_layer.blocks.append(layer_weights[layer_num])
+
+
 
         return msda
 
