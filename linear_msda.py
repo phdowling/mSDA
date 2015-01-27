@@ -15,6 +15,8 @@ from gensim.corpora.mmcorpus import MmCorpus
 
 import os
 
+USE_MMCORPUS = False
+
 def convert(sparse_bow, dimensionality):
     dense = np.zeros((dimensionality, 1))
     for dim, value in sparse_bow:
@@ -28,6 +30,47 @@ def convert_to_sparse_matrix(input_data, dimensionality):
         for word_id, count in document:
             sparse[word_id, docidx] = count
     return sparse.tocsc()
+
+
+class NumpyChunkCorpus(object):
+    @staticmethod
+    def serialize(filename_prefix, layer, current_representation, chunksize=10000):
+        is_corpus, current_representation = utils.is_corpus(current_representation)
+        if is_corpus:
+            for chunk_no, chunk in enumerate(utils.grouper(current_representation, chunksize)):
+                ln.debug("preparing chunk (%s documents)..." % chunksize)
+                chunk_trans = layer.__getitem__(chunk, numpy_output="chunks", chunksize=chunksize)
+                fname = "%s_%s" % (filename_prefix, chunk_no)
+                np.save(fname, chunk_trans)
+                ln.debug("finished serializing chunk.")
+        else:
+            for chunk_no, chunk in enumerate(current_representation):
+                ln.debug("preparing chunk (%s documents)..." % chunksize)
+                chunk_trans = layer.__getitem__(chunk, numpy_input=True, numpy_output=True, chunksize=chunksize)
+                fname = "%s_%s" % (filename_prefix, chunk_no)
+                np.save(fname, chunk_trans)
+                ln.debug("finished serializing chunk.")
+
+    @staticmethod
+    def load(filename_prefix):
+        filenames = []
+        for filename in os.listdir(os.getcwd()):
+            if filename.startswith(filename_prefix):
+                filenames.append(filename)
+
+        filenames.sort()
+
+        def chunk_iterator(fnames):
+            for fname in fnames:
+                yield np.load(fname)
+
+        return chunk_iterator(filenames)
+
+    @staticmethod
+    def cleanup(filename_prefix):
+        for filename in os.listdir(os.getcwd()):
+            if filename.startswith(filename_prefix):
+                os.remove(filename)
 
 
 class mSDA(object):
@@ -47,18 +90,42 @@ class mSDA(object):
         else:
             self.output_dimensionality = output_dimensionality
 
-        reduction_layer = mDALayer(self.noise, self.lambda_, self.input_dimensionality, self.output_dimensionality,
-                                   prototype_ids)
+        reduction_layer = mDALayer(noise=self.noise, lambda_=self.lambda_,
+                                   input_dimensionality=self.input_dimensionality,
+                                   output_dimensionality=self.output_dimensionality,
+                                   prototype_ids=prototype_ids)
 
         self.reduction_layer = reduction_layer
-        self.mda_layers = [mDALayer(noise, self.lambda_, output_dimensionality) for _ in range(num_layers - 1)]
+        self.mda_layers = [mDALayer(noise, self.lambda_, input_dimensionality=self.output_dimensionality)
+                           for _ in range(num_layers - 1)]
 
-    def generate_streamed_csc_from_corpus(self, corpus, dimensions, chunksize):
-        for chunk in utils.grouper(corpus, chunksize):
-            chunk_csc = matutils.corpus2csc(chunk, dimensions)
-            transformed = self.reduction_layer.__getitem__(chunk_csc, numpy_input=True, numpy_output=True,
-                                                           chunksize=chunksize)
-            yield transformed
+    @staticmethod
+    def _save_intermediate(layer, current_representation, chunksize=10000):
+        #ln.debug("save_intermediate: %s" % chunksize)
+        if USE_MMCORPUS:
+            ln.debug("calling __getitem__")
+            transformed = layer.__getitem__(current_representation, chunksize=chunksize)
+            ln.debug("serializing corpus")
+            MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
+        else:
+            NumpyChunkCorpus.serialize(".msda_intermediate", layer, current_representation=current_representation,
+                                       chunksize=chunksize)
+
+
+    @staticmethod
+    def _load_intermediate():
+        if USE_MMCORPUS:
+            return MmCorpus(".msda_intermediate.mm")
+        else:
+            return NumpyChunkCorpus.load(".msda_intermediate")
+
+    @staticmethod
+    def _cleanup_intermediate():
+        if USE_MMCORPUS:
+            os.remove(".msda_intermediate.mm")
+            os.remove(".msda_intermediate.mm.index")
+        else:
+            NumpyChunkCorpus.cleanup(".msda_intermediate")
 
     def train(self, corpus, chunksize=10000, use_temp_files=True):
         """
@@ -70,11 +137,13 @@ class mSDA(object):
         require a significant amount of disk space. Using temp files will strongly speed up training, especially as the
         number of layers increases.
         """
+        #ln.debug("train: %s" % chunksize)
         ln.info("Training mSDA with %s layers.", len(self.mda_layers) + 1)
         if not use_temp_files:
             ln.warn("Training without temporary files. May take a long time!")
             self.reduction_layer.train(corpus, chunksize=chunksize)
-            current_representation = self.reduction_layer[corpus]
+            current_representation = self.reduction_layer.__getitem__(corpus, chunksize=chunksize)
+
             for layer_num, layer in enumerate(self.mda_layers):
 
                 # We feed the corpus through all intermediate layers to get the current representation
@@ -93,21 +162,17 @@ class mSDA(object):
             self.reduction_layer.train(corpus, chunksize=chunksize)
 
             # serialize intermediate representation, load again (streamed) to train next layer
-            ln.debug("calling __getitem__")
-            transformed = self.reduction_layer.__getitem__(corpus, chunksize=chunksize)
-            ln.debug("serializing corpus")
-            MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
-            current_representation = MmCorpus(".msda_intermediate.mm")
+            self._save_intermediate(layer=self.reduction_layer, current_representation=corpus, chunksize=chunksize)
+            current_representation = self._load_intermediate()
 
             for layer_num, layer in enumerate(self.mda_layers):
-                layer.train(current_representation, chunksize=chunksize)
+                layer.train(current_representation, chunksize=chunksize, numpy_chunk_input=(not USE_MMCORPUS))
 
                 if layer_num < len(self.mda_layers) - 1:
-                    transformed = self.reduction_layer.__getitem__(current_representation, chunksize=chunksize)
-                    os.remove(".msda_intermediate.mm")
-                    os.remove(".msda_intermediate.mm.index")
-                    MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
-                    current_representation = MmCorpus(".msda_intermediate.mm")
+                    self._save_intermediate(layer, current_representation, chunksize=chunksize)
+                    current_representation = self._load_intermediate()
+
+            self._cleanup_intermediate()
 
         ln.info("mSDA finished training.")
 
@@ -124,6 +189,7 @@ class mSDA(object):
         return hidden
 
     def __getitem__(self, bow, chunksize=10000):
+        #ln.debug("getitem: %s" % chunksize)
         is_corpus, bow = utils.is_corpus(bow)
         if not is_corpus:
             bow = [bow]

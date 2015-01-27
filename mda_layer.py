@@ -12,6 +12,12 @@ from gensim import utils, matutils
 USE_MAPREDUCE = False
 
 
+def todense(matrix):
+    try:
+        return matrix.todense()
+    except AttributeError:
+        return matrix
+
 class FilteringDualGrouper(object):
     """
     Wrapper for simultaneously iterating over a corpus and its projection into a subset of dimensions.
@@ -50,7 +56,7 @@ class mDALayer(object):
         self.input_dimensionality = input_dimensionality
 
         self.output_dimensionality = output_dimensionality or input_dimensionality
-        if output_dimensionality != input_dimensionality:
+        if self.output_dimensionality != self.input_dimensionality:
             if prototype_ids is None:
                 ln.warn("Need prototype IDs to train reduction layer.")
 
@@ -64,7 +70,8 @@ class mDALayer(object):
         self.num_folds = int(np.ceil(float(self.input_dimensionality) / self.output_dimensionality))
         self.blocks = []
 
-    def train(self, corpus, chunksize=10000):
+    def train(self, corpus, chunksize=10000, numpy_chunk_input=False):
+        #ln.debug("train: %s" % chunksize)
         if self.input_dimensionality != self.output_dimensionality:
             assert self.prototype_ids is not None, "Need prototype IDs to train dimensional reduction layer."
 
@@ -77,10 +84,11 @@ class mDALayer(object):
 
         # build scatter matrices
         ln.info("Building all scatter and P matrices (full corpus iteration).")
-        if self.input_dimensionality != self.output_dimensionality:
-            dualIterator = FilteringDualGrouper(corpus, self.input_dimensionality, self.prototype_ids, chunksize)
+        if numpy_chunk_input:
+            ln.debug("Assuming that corpus is made up of numpy chunks.")
+            dualIterator = ((chunk, None) for chunk in corpus)
         else:
-            dualIterator = FilteringDualGrouper(corpus, self.input_dimensionality, chunksize=chunksize, dense=True)
+            dualIterator = FilteringDualGrouper(corpus, self.input_dimensionality, self.prototype_ids, chunksize)
 
         scatters_and_P_matrices_dict = dict()
         processed = 0
@@ -90,29 +98,32 @@ class mDALayer(object):
                 block_indices = self.randomized_indices[dim_batch_idx]
                 block_data = doc_chunk[block_indices]
 
+                blocksize = block_data.shape[1]
+                bias = np.ones((1, blocksize))
+                if type(doc_chunk) == sparse.csc.csc_matrix:
+                    input_chunk = vstack((block_data, bias))
+                else:
+                    input_chunk = np.vstack((block_data, bias))
+
+                scatter_update = todense(input_chunk.dot(input_chunk.T))
+
+                # we only explicitly construct P when we do dimensional reduction, otherwise we can use scatter
+                if target_representation_chunk is not None:
+                    P_update = todense(target_representation_chunk.dot(input_chunk.T))
+
                 if dim_batch_idx not in scatters_and_P_matrices_dict:
-                    scatter = np.zeros((len(block_indices) + 1, len(block_indices) + 1), dtype=float)
+                    scatter = scatter_update
 
                     # we only explicitly construct P when we do dimensional reduction, otherwise we can use scatter
                     if target_representation_chunk is not None:
-                        P = np.zeros((self.output_dimensionality, len(block_indices) + 1), dtype=float)
+                        P = P_update
                     else:
                         P = None
                 else:
                     scatter, P = scatters_and_P_matrices_dict[dim_batch_idx]
-
-                blocksize = block_data.shape[1]
-                bias = np.ones((1, blocksize))
-                input_chunk = vstack((block_data, bias))
-
-                scatter += input_chunk.dot(input_chunk.T)
-
-                # we only explicitly construct P when we do dimensional reduction, otherwise we can use scatter
-                if target_representation_chunk is not None:
-                    #ln.debug("target: %s", target_representation_chunk.shape)
-                    #ln.debug("input: %s", input_chunk.shape)
-                    #ln.debug("update: %s", target_representation_chunk.dot(input_chunk.T).shape)
-                    P += target_representation_chunk.dot(input_chunk.T)
+                    scatter += scatter_update
+                    if P is not None:
+                        P += P_update
 
                 scatters_and_P_matrices_dict[dim_batch_idx] = (scatter, P)
 
@@ -202,12 +213,12 @@ class mDALayer(object):
         #ln.debug("solving for weights...")
         # Qreg = (Q + reg) # This is based on Q and reg, and is therefore symmetric
         weights = np.linalg.lstsq((Q + reg), P.T)[0].T
-        ln.debug("weights matrix shape is %s x %s. Input dim is %s, output %s. r_dim is %s." %
-                 (weights.shape[0],
-                  weights.shape[1],
-                  self.input_dimensionality,
-                  self.output_dimensionality,
-                  block_input_d))
+        #ln.debug("weights matrix shape is %s x %s. Input dim is %s, output %s. r_dim is %s." %
+        #         (weights.shape[0],
+        #          weights.shape[1],
+        #          self.input_dimensionality,
+        #          self.output_dimensionality,
+        #          block_input_d))
 
         del P
         del Q
@@ -239,8 +250,10 @@ class mDALayer(object):
             block_indices = self.randomized_indices[dim_batch_idx]
             block_data = input_data[block_indices]
 
-            if type(block_data) == sparse.csc.csc_matrix:
+            try:
                 block_data = block_data.todense()
+            except AttributeError:
+                pass
 
             block_weights = self.blocks[dim_batch_idx]
 
@@ -255,6 +268,7 @@ class mDALayer(object):
         return representation_avg
 
     def __getitem__(self, input_data, numpy_input=False, numpy_output=False, chunksize=10000):
+        #ln.debug("getitem: %s" % chunksize)
         # by default, we need to output corpus as sparse gensim format
         # if we have numpy input, we convert it as-is and return as either gensim sparse format or as-is (numpy)
         if numpy_input:
@@ -274,16 +288,22 @@ class mDALayer(object):
 
             def transformed_corpus():
                 for doc_chunk in utils.grouper(input_data, chunksize):
+                    ln.debug("transformed_corpus() is preparing a chunk (%s documents)..." % chunksize)
                     chunk = matutils.corpus2csc(doc_chunk, self.input_dimensionality)
+                    ln.debug("getting hidden representation...")
                     hidden = self._get_hidden_representations(chunk)
-                    if numpy_output:
+                    ln.debug("iterating through results...")
+                    if numpy_output == "chunks":
+                        yield hidden
+                    elif numpy_output:
                         for column in hidden.T:
-                            yield column
+                            yield column.T
                     else:
                         for doc in matutils.Dense2Corpus(hidden):
                             yield doc
+                    ln.debug("processed chunk.")
 
-            if not is_corpus:
+            if (not is_corpus) or ((not numpy_input) and numpy_output == "chunks"):
                 # probably want only the vector back, not a corpus
                 return list(transformed_corpus()).pop()
             else:
