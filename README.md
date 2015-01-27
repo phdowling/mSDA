@@ -1,22 +1,30 @@
 mSDA
 ====
 
-Python implementation of (linear) Marginalized Stacked Denoising Autoencoder (mSDA), as well as dense Cohort of Terms (dCoT). 
+Python implementation of (linear) Marginalized Stacked Denoising Autoencoder (mSDA), as well as dense Cohort of Terms (dCoT), which is a dimensionality-reduction algorithm based on mSDA.
 
 Based on Matlab code by Minmin Chen. For original Papers and Code, see http://www.cse.wustl.edu/~mchen/.
 
-Note that the basic mSDA class is pretty much untested at this point, mSDAhd however seems to work okay.
+This code has not been extensively tested, so do not rely on this to in fact produce correct representations quite yet. Keep following this repository to keep up to date.
 
 Example usage with dimensional reduction on text:
 
 ```python
-from linear_msda import mSDAhd
-
-# initialize mSDA / dCoT
-msda = mSDAhd(dimensions, id2word, noise=noise, num_layers=num_layers)
+from linear_msda import mSDA
 
 # load your corpus, should be bag of words format (as in e.g. gensim)
 preprocessed_bow_documents = MmCorpus("test_corpus.mm")
+
+# load your dictionary
+id2word = Dictionary("...")
+
+dimensions = 1000
+
+# select prototype word IDs, e.g. by finding the most frequent terms
+prototype_ids = [id_ for id_, freq in sorted(id2word.dfs.items(), key=lambda (k, v): v, reverse=True)[:dimensions]]
+
+# initialize mSDA / dCoT
+msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(id2word), output_dimensionality=dimensions, prototype_ids=prototype_ids)
 
 # train on our corpus, generating the hidden representations
 msda.train(preprocessed_bow_documents, chunksize=10000)
@@ -32,4 +40,3 @@ corpus = [preprocess(doc) for doc in mycorpus_raw]
 representations = msda[corpus]
 ```
 
-Use test_msda to run a basic test. What it does is generate a list of pairs of synonyms from the dictionary (using WordNet), and a list or random pairs. It then computes the average similarities of both. The synonyms should have a higher average similarity (in my experiments, around 0.2 compared to 0.1). This is just a preliminary, primitive test to get an idea for whether the generated representations are of any use.
