@@ -273,8 +273,8 @@ class mDALayer(object):
         # if we have numpy input, we convert it as-is and return as either gensim sparse format or as-is (numpy)
         if numpy_input:
             if numpy_output:
-                ln.debug("running mDA layer on (%s,%s) input of type %s." % (input_data.shape[0], input_data.shape[1],
-                                                                             type(input_data)))
+                #ln.debug("running mDA layer on (%s,%s) input of type %s, shape %s." % (input_data.shape[0], input_data.shape[1],
+                #                                                             type(input_data), input_data.shape))
                 return self._get_hidden_representations(input_data)
             else:
                 return matutils.any2sparse(self._get_hidden_representations(input_data))
