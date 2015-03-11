@@ -20,14 +20,14 @@ import numpy as np
 dictionary = None
 
 settings = {
-    "models": {"lsi": True, "msda": True, "noise": True, "bow": True},
+    "models": {"lsi": False, "msda": True, "noise": True, "bow": True},
     "dimensionalities": {
         "lsi": 200,
-        "msda": 200
+        "msda": 1000
     },
     "held_out_docs": 2000,
-    "classifier": "PassiveAggressive"
-    #"classifier": "Perceptron"
+    #"classifier": "PassiveAggressive"
+    "classifier": "Perceptron"
 
 }
 
