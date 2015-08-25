@@ -70,7 +70,7 @@ class mDALayer(object):
         self.num_folds = int(np.ceil(float(self.input_dimensionality) / self.output_dimensionality))
         self.blocks = []
 
-    def train(self, corpus, chunksize=10000, numpy_chunk_input=False):
+    def train(self, corpus, numpy_chunk_input=False, chunksize=10000):
         #ln.debug("train: %s" % chunksize)
         if self.input_dimensionality != self.output_dimensionality:
             assert self.prototype_ids is not None, "Need prototype IDs to train dimensional reduction layer."
@@ -229,12 +229,13 @@ class mDALayer(object):
 
     @staticmethod
     def _get_intermediate_representations(block_weights, block_input_data):
+        # both matrices should always be dense at this point
 
         dimensionality, num_documents = block_input_data.shape
 
         bias = np.ones((1, num_documents))
 
-        block_input_data = vstack((block_input_data, bias)).todense()
+        block_input_data = np.vstack((block_input_data, bias))
 
         hidden_representations = np.dot(block_weights, block_input_data)
 
@@ -244,8 +245,9 @@ class mDALayer(object):
         return hidden_representations
 
     def _get_hidden_representations(self, input_data):
+        # input_data is sparse on the first layer, but it shouldn't matter here
         assert input_data.shape[0] == self.input_dimensionality
-        representation_avg = None
+        representation_avg = None  # todo don't build incremental avg, just do it the normal way? Might overflow though
         for dim_batch_idx in range(self.num_folds):
             block_indices = self.randomized_indices[dim_batch_idx]
             block_data = input_data[block_indices]
@@ -267,44 +269,8 @@ class mDALayer(object):
 
         return representation_avg
 
-    def __getitem__(self, input_data, numpy_input=False, numpy_output=False, chunksize=10000):
-        #ln.debug("getitem: %s" % chunksize)
-        # by default, we need to output corpus as sparse gensim format
-        # if we have numpy input, we convert it as-is and return as either gensim sparse format or as-is (numpy)
-        if numpy_input:
-            if numpy_output:
-                #ln.debug("running mDA layer on (%s,%s) input of type %s, shape %s." % (input_data.shape[0], input_data.shape[1],
-                #                                                             type(input_data), input_data.shape))
-                return self._get_hidden_representations(input_data)
-            else:
-                return matutils.any2sparse(self._get_hidden_representations(input_data))
-        else:
-            is_corpus, input_data = utils.is_corpus(input_data)
-            if not is_corpus:
-                input_data = [input_data]
+    def __getitem__(self, input_data):
+        # accepts only numpy/scipy matrices (dense or sparse), and returns a dense matrix in every case
 
-            if not chunksize:
-                chunksize = 1
+        return self._get_hidden_representations(input_data)
 
-            def transformed_corpus():
-                for doc_chunk in utils.grouper(input_data, chunksize):
-                    ln.debug("transformed_corpus() is preparing a chunk (%s documents)..." % chunksize)
-                    chunk = matutils.corpus2csc(doc_chunk, self.input_dimensionality)
-                    ln.debug("getting hidden representation...")
-                    hidden = self._get_hidden_representations(chunk)
-                    ln.debug("iterating through results...")
-                    if numpy_output == "chunks":
-                        yield hidden
-                    elif numpy_output:
-                        for column in hidden.T:
-                            yield column.T
-                    else:
-                        for doc in matutils.Dense2Corpus(hidden):
-                            yield doc
-                    ln.debug("processed chunk.")
-
-            if (not is_corpus) or ((not numpy_input) and numpy_output == "chunks"):
-                # probably want only the vector back, not a corpus
-                return list(transformed_corpus()).pop()
-            else:
-                return transformed_corpus()
