@@ -42,14 +42,20 @@ class NumpyChunkCorpus(object):
                 ln.debug("preparing chunk for conversion (%s documents)..." % len(chunk))
                 assert num_terms is not None, "Need num_terms to properly handle sparse corpus format"
                 chunk_as_csc = matutils.corpus2csc(chunk, num_terms=num_terms)
+
+                ln.debug("Chunk converted to csc, running through layer..")
                 chunk_trans = layer.__getitem__(chunk_as_csc)
+
+                ln.debug("Serializing hidden representation..")
                 fname = "%s_%s" % (filename_prefix, chunk_no)
                 np.save(fname, chunk_trans)
-                ln.debug("finished serializing chunk.")
+                ln.debug("Finished serializing chunk. Processed %s documents so far." %
+                         (chunk_no * chunksize + len(chunk)))
         else:
             for chunk_no, chunk in enumerate(current_representation):
-                ln.debug("preparing chunk (%s documents)..." % chunksize)
+                ln.debug("converting chunk (%s documents)..." % chunksize)
                 chunk_trans = layer.__getitem__(chunk)
+                ln.debug("Serializing hidden representation..")
                 fname = "%s_%s" % (filename_prefix, chunk_no)
                 np.save(fname, chunk_trans)
                 ln.debug("finished serializing chunk.")
@@ -205,19 +211,21 @@ class mSDA(object):
             chunksize = 1
 
         def transformed_corpus():
-            for doc_chunk in utils.grouper(bow, chunksize):
+            for chunk_no, doc_chunk in enumerate(utils.grouper(bow, chunksize)):
+                ln.debug("Converting chunk %s to csc format.." % chunk_no)
                 chunk = matutils.corpus2csc(doc_chunk, self.input_dimensionality)
+                ln.debug("Computing hidden representation for chunk.. ")
                 hidden = self._get_hidden_representations(chunk)
-                ln.info("Finished computing representation for chunk. Yielding results.")
+                ln.info("Finished computing representation for chunk %s, yielding results. Total docs processed: %s" %
+                        (chunk_no, chunk_no * chunksize + len(doc_chunk)))
                 for column in hidden.T:
                     yield matutils.dense2vec(column.T)
+                ln.debug("Done yielding chunk %s" % chunk_no)
 
             ln.info("Finished computing representations for all chunks.")
 
-
         if not is_corpus:
             res = list(transformed_corpus()).pop()
-
             return res
         else:
             return transformed_corpus()

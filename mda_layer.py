@@ -71,7 +71,6 @@ class mDALayer(object):
         self.blocks = []
 
     def train(self, corpus, numpy_chunk_input=False, chunksize=10000):
-        #ln.debug("train: %s" % chunksize)
         if self.input_dimensionality != self.output_dimensionality:
             assert self.prototype_ids is not None, "Need prototype IDs to train dimensional reduction layer."
 
