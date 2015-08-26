@@ -47,11 +47,13 @@ class NumpyChunkCorpus(object):
                 chunk_trans = layer.__getitem__(chunk_as_csc)
 
                 ln.debug("Serializing hidden representation..")
-                fname = "%s_%s" % (filename_prefix, chunk_no)
+                fname = "%s_%s" % (filename_prefix, ("0" * (15 - len(str(chunk_no)))) + str(chunk_no))
                 np.save(fname, chunk_trans)
                 ln.debug("Finished serializing chunk. Processed %s documents so far." %
                          (chunk_no * chunksize + len(chunk)))
         else:
+            ln.info("Beginning serialization of non-gensim corpus format intermediate representation.")
+            ln.debug("Type of current_representation is %s" % type(current_representation))
             for chunk_no, chunk in enumerate(current_representation):
                 ln.debug("converting chunk (%s documents)..." % chunksize)
                 chunk_trans = layer.__getitem__(chunk)
@@ -64,16 +66,23 @@ class NumpyChunkCorpus(object):
 
     @staticmethod
     def load(filename_prefix):
+        ln.debug("Loading intermediate representations..")
         filenames = []
         for filename in os.listdir(os.getcwd()):
             if filename.startswith(filename_prefix):
                 filenames.append(filename)
 
         filenames.sort()
+        ln.debug("Found %s files" % len(filenames))
 
-        def chunk_iterator(fnames):
-            for fname in fnames:
-                yield np.load(fname)
+        class chunk_iterator(object):
+            def __init__(self, fnames):
+                self.fnames = fnames
+
+            def __iter__(self):
+                for fname in self.fnames:
+                    ln.debug("Loading file %s" % fname)
+                    yield np.load(fname)
 
         return chunk_iterator(filenames)
 
@@ -119,6 +128,7 @@ class mSDA(object):
         #    ln.debug("serializing corpus")
         #    MmCorpus.serialize(".msda_intermediate.mm", transformed, progress_cnt=chunksize)
         #else:
+        ln.debug("_save_intermediate called")
         NumpyChunkCorpus.serialize(".msda_intermediate", layer, current_representation=current_representation,
                                    num_terms=num_terms, chunksize=chunksize)
 
@@ -128,6 +138,7 @@ class mSDA(object):
         #if USE_MMCORPUS:
         #    return MmCorpus(".msda_intermediate.mm")
         #else:
+        ln.debug("_load_intermediate called")
         return NumpyChunkCorpus.load(".msda_intermediate")
 
     @staticmethod
@@ -136,6 +147,7 @@ class mSDA(object):
         #    os.remove(".msda_intermediate.mm")
         #    os.remove(".msda_intermediate.mm.index")
         #else:
+        ln.debug("_cleanup_intermediate called")
         NumpyChunkCorpus.cleanup(".msda_intermediate")
 
     def train(self, corpus, chunksize=10000):
@@ -180,7 +192,7 @@ class mSDA(object):
 
         for layer_num, layer in enumerate(self.mda_layers):
             layer.train(current_representation, numpy_chunk_input=True, chunksize=chunksize)
-            if layer_num < len(self.mda_layers) - 1:
+            if layer_num < len(self.mda_layers):
                 self._save_intermediate(layer, current_representation, chunksize=chunksize)
                 current_representation = self._load_intermediate()
         self._cleanup_intermediate()
