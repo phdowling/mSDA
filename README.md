@@ -29,14 +29,15 @@ msda = mSDA(noise=0.5, num_layers=3, input_dimensionality=len(id2word), output_d
 # train on our corpus, generating the hidden representations
 msda.train(preprocessed_bow_documents, chunksize=10000)
 
-# get a hidden representation of new text:
+# get a hidden representation of new text: (note: this is slow)
 mytext = "add some text here"
 bow = preprocess(mytext) # remove stopwords, generate bow, etc.
 representation = msda[bow]
 
-# this also works for corpus formats in the same notation, like in gensim
+# this also works for corpus formats in the same notation, like in gensim (this way is also more efficient)
 mycorpus_raw = ["add some text here", "another text", "this is a document"]
 corpus = [preprocess(doc) for doc in mycorpus_raw]
 representations = msda[corpus]
 ```
 
+Note that this implementation is significantly more efficient when documents are transformed in bulk. If you transform documents one at a time, you may experience runtimes that are orders of magniture slower than those of bulk-processing the same data.
