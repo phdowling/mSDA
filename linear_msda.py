@@ -58,7 +58,7 @@ class NumpyChunkCorpus(object):
                 ln.debug("converting chunk (%s documents)..." % chunksize)
                 chunk_trans = layer.__getitem__(chunk)
                 ln.debug("Serializing hidden representation..")
-                fname = "%s_%s" % (filename_prefix, chunk_no)
+                fname = "%s_%s" % (filename_prefix, ("0" * (15 - len(str(chunk_no)))) + str(chunk_no))
                 np.save(fname, chunk_trans)
                 ln.debug("finished serializing chunk.")
 
